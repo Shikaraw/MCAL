@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "{{modid}}",
+  "version": "{{modVersion}}",
+  "name": "{{modName}}",
+  "description": "{{description}}",
+  "authors": [
+    "{{author}}"
+  ],
+  "contact": {
+    "homepage": "https://example.com/{{modid}}",
+    "sources": "https://github.com/example/{{modid}}"
+  },
+  "license": "{{license}}",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "{{package}}.{{ModClassName}}"
+    ],
+    "client": [
+      "{{package}}.{{ModClassName}}Client"
+    ]
+  },
+  "mixins": [
+    "{{modid}}.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "fabric-api": "*",
+    "minecraft": "~1.20.1",
+    "java": ">=17"
+  },
+  "suggests": {
+    "modmenu": "*"
+  }
+}

@@ -1,0 +1,64 @@
+plugins {
+    id 'java'
+}
+
+group = '{{package}}'
+version = '{{modVersion}}'
+
+base {
+    archivesName = '{{modid}}'
+}
+
+repositories {
+    // 国内加速（可选）
+    // maven { name = 'Aliyun'; url = 'https://maven.aliyun.com/repository/public' }
+
+    mavenCentral()
+    // Paper 官方仓库（保留！paper-api 只在这里发布）
+    maven {
+        name = 'papermc'
+        url = 'https://repo.papermc.io/repository/maven-public/'
+    }
+}
+
+dependencies {
+    // 只编译期需要：运行时由服务端提供，打进 jar 反而会冲突
+    compileOnly 'io.papermc.paper:paper-api:1.21-R0.1-SNAPSHOT'
+
+    // 需要打包第三方库时，推荐 Shadow 插件（GradleUp Shadow，替代已停更的 com.github.johnrengelman.shadow）：
+    //   plugins { id 'com.gradleup.shadow' version '<最新版本>' }
+    //   dependencies { implementation 'com.example:lib:1.0.0' }
+    //   build 后用 shadowJar 的产物，而不是普通 jar
+    //
+    // 需要访问服务端内部实现（NMS）时，用 paperweight-userdev：
+    //   dev 依赖是 io.papermc.paperweight.userdev，写法与 api 依赖不同，
+    //   参考 https://docs.papermc.io/paper/dev/userdev/
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 21
+}
+
+tasks.named('jar', Jar).configure {
+    // 打出的 jar 不带版本号以外的额外处理；plugin.yml 由 src/main/resources 提供
+    manifest {
+        attributes(
+                'Implementation-Title': '{{modName}}',
+                'Implementation-Version': project.version
+        )
+    }
+}
+
+// 开发辅助：把构建产物复制到本地测试服 plugins 目录（按需修改路径并取消注释）
+// tasks.register('deployToServer', Copy) {
+//     dependsOn tasks.named('jar')
+//     from tasks.named('jar')
+//     into '/path/to/server/plugins'
+// }

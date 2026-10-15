@@ -1,0 +1,5 @@
+{
+  "item.{{modid}}.example_item": "示例物品",
+  "block.{{modid}}.example_block": "示例方块",
+  "command.{{modid}}.hello": "打招呼"
+}

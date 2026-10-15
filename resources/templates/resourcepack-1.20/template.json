@@ -1,0 +1,34 @@
+{
+  "id": "resourcepack-1.20",
+  "name": "资源包骨架（MC 1.20.x）",
+  "kind": "resourcepack",
+  "loader": "vanilla",
+  "description": "MC 1.20 资源包骨架：pack.mcmeta（pack_format 15 + supported_formats）、物品模型、方块 state/model、中英文语言文件、材质目录占位。",
+  "variables": [
+    {
+      "key": "name",
+      "label": "资源包名称",
+      "default": "My Resource Pack",
+      "required": true
+    },
+    {
+      "key": "author",
+      "label": "作者",
+      "default": "YourName"
+    },
+    {
+      "key": "modVersion",
+      "label": "版本",
+      "default": "1.0.0"
+    },
+    {
+      "key": "license",
+      "label": "协议",
+      "default": "MIT"
+    }
+  ],
+  "ignore": [],
+  "postInstallNote": "pack_format 必须与目标版本匹配：1.20~1.20.1 = 15、1.20.2 = 18、1.20.3~1.20.4 = 22、1.20.5~1.20.6 = 32、1.21 = 34（资源包与数据包是两套编号）。",
+  "installDir": "resourcepacks",
+  "gameVersion": "1.20.x"
+}

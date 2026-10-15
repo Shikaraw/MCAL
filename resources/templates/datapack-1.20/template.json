@@ -1,0 +1,34 @@
+{
+  "id": "datapack-1.20",
+  "name": "数据包骨架（MC 1.20.x）",
+  "kind": "datapack",
+  "loader": "vanilla",
+  "description": "MC 1.20 数据包骨架：pack.mcmeta、函数（mcfunction）、minecraft:load 标签、进度（advancements）示例。",
+  "variables": [
+    {
+      "key": "name",
+      "label": "数据包名称",
+      "default": "My Datapack",
+      "required": true
+    },
+    {
+      "key": "author",
+      "label": "作者",
+      "default": "YourName"
+    },
+    {
+      "key": "modVersion",
+      "label": "版本",
+      "default": "1.0.0"
+    },
+    {
+      "key": "license",
+      "label": "协议",
+      "default": "MIT"
+    }
+  ],
+  "ignore": [],
+  "postInstallNote": "数据包目录名不会影响命名空间：命令里的 {{modid}}:hello 由 data/{{modid}}/ 目录决定。改动后在世界内执行 /reload 即可生效（部分标签需要重进世界）。",
+  "installDir": "saves/<世界名>/datapacks",
+  "gameVersion": "1.20.x"
+}

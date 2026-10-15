@@ -1,0 +1,49 @@
+{
+  "format": "mcal",
+  "name": "{{modName}}",
+  "version": "{{modVersion}}",
+  "author": "{{author}}",
+  "description": "{{description}}",
+  "gameVersion": "{{gameVersion}}",
+  "loaderType": "{{loaderType}}",
+  "loaderVersion": "{{loaderVersion}}",
+  "overridesDir": "overrides",
+  "files": [
+    {
+      "path": "mods/fabric-api.jar",
+      "targetDir": "mods",
+      "optional": false,
+      "platform": {
+        "type": "modrinth",
+        "projectId": "fabric-api",
+        "versionId": "<在 Modrinth 版本页 URL /v<版本号> 中获取>"
+      }
+    },
+    {
+      "path": "mods/example-mod.jar",
+      "targetDir": "mods",
+      "optional": false,
+      "downloads": [
+        "https://example.com/files/example-mod-1.0.0.jar"
+      ],
+      "hashes": {
+        "sha1": "<40 位十六进制 sha1>",
+        "sha512": "<128 位十六进制 sha512>"
+      },
+      "fileSize": 0
+    },
+    {
+      "path": "shaderpacks/example-shader.zip",
+      "targetDir": "shaderpacks",
+      "optional": true,
+      "downloads": [
+        "https://example.com/files/example-shader.zip"
+      ]
+    }
+  ],
+  "extra": {
+    "note": "extra 字段由整合包作者自定义，MCAL 会原样保留；可用于记录服务器地址、推荐内存等",
+    "recommendedMemoryMB": 4096,
+    "serverAddress": ""
+  }
+}

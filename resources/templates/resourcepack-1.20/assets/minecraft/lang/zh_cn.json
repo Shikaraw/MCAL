@@ -1,0 +1,5 @@
+{
+  "item.minecraft.apple": "苹果（已改名的示例）",
+  "block.minecraft.stone": "石头（已改名的示例）",
+  "pack.{{modid}}.name": "{{modName}}"
+}

@@ -1,0 +1,22 @@
+// NeoForge 模组的 settings.gradle：插件从 NeoForged Maven 解析
+pluginManagement {
+    repositories {
+        // 国内加速（可选）：BMCLAPI 代理了 NeoForged 仓库
+        // maven { name = 'BMCLAPI'; url = 'https://bmclapi2.bangbang93.com/maven' }
+        // maven { name = 'Aliyun'; url = 'https://maven.aliyun.com/repository/public' }
+
+        gradlePluginPortal()
+        maven {
+            name = 'NeoForged'
+            url = 'https://maven.neoforged.net/releases'
+        }
+    }
+}
+
+plugins {
+    // 让 Gradle 能自动解析 Java 工具链（JDK 21）。
+    // 版本可自行更新：https://plugins.gradle.org/plugin/org.gradle.toolchains.foojay-resolver-convention
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
+}
+
+rootProject.name = '{{modid}}'

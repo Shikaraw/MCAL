@@ -1,0 +1,23 @@
+// Forge 模组的 settings.gradle：插件从 MinecraftForge Maven 解析
+pluginManagement {
+    repositories {
+        // 国内加速（可选）：BMCLAPI 同时代理 Forge / Mojang 仓库
+        // maven { name = 'BMCLAPI'; url = 'https://bmclapi2.bangbang93.com/maven' }
+        // maven { name = 'Aliyun'; url = 'https://maven.aliyun.com/repository/public' }
+
+        gradlePluginPortal()
+        maven {
+            name = 'MinecraftForge'
+            url = 'https://maven.minecraftforge.net/'
+        }
+    }
+}
+
+plugins {
+    // 让 Gradle 能解析 ForgeGradle 的插件版本范围。
+    // foojay 插件用于自动下载/匹配 Java 工具链；版本过旧时可按需更新：
+    // https://plugins.gradle.org/plugin/org.gradle.toolchains.foojay-resolver-convention
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
+}
+
+rootProject.name = '{{modid}}'

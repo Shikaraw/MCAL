@@ -1,0 +1,1465 @@
+/* ==========================================================================
+   MCAL 全局样式：重置、基础排版、动效、以及跨页面复用的组件类。
+   UI 组件以 CSS 类为主要载体（React 组件只是薄封装），
+   这样并行开发多个页面时视觉天然一致。
+   ========================================================================== */
+
+@import './tokens.css';
+
+/* ------------------------------- 重置 ------------------------------- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--f-sans);
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
+  color: var(--c-text);
+  background: var(--c-void);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  user-select: none;
+}
+
+/* 允许在需要的地方选中文本（日志、代码、对话） */
+.selectable,
+input,
+textarea,
+pre,
+code,
+.log-view,
+.markdown {
+  user-select: text;
+}
+
+img,
+svg,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+a {
+  color: var(--c-diamond);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5 {
+  font-family: var(--f-display);
+  font-weight: 600;
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
+}
+
+h1 {
+  font-size: var(--fs-2xl);
+}
+h2 {
+  font-size: var(--fs-xl);
+}
+h3 {
+  font-size: var(--fs-lg);
+}
+h4 {
+  font-size: var(--fs-md);
+}
+
+/* ------------------------------- 滚动条 ------------------------------- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.09);
+  border-radius: var(--r-full);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::selection {
+  background: rgba(61, 220, 132, 0.28);
+  color: #fff;
+}
+
+/* ------------------------------- 焦点可见性 ------------------------------- */
+:focus-visible {
+  outline: 2px solid var(--c-verdant);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+/* =============================== 动效 =============================== */
+
+@keyframes mcal-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes mcal-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mcal-rise-lg {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes mcal-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes mcal-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.012);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes mcal-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes mcal-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@keyframes mcal-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes mcal-aurora {
+  0% {
+    transform: translate3d(-6%, -4%, 0) scale(1.05) rotate(0deg);
+  }
+  33% {
+    transform: translate3d(4%, 2%, 0) scale(1.12) rotate(4deg);
+  }
+  66% {
+    transform: translate3d(-2%, 6%, 0) scale(1.08) rotate(-3deg);
+  }
+  100% {
+    transform: translate3d(-6%, -4%, 0) scale(1.05) rotate(0deg);
+  }
+}
+
+@keyframes mcal-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@keyframes mcal-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  50%,
+  95% {
+    opacity: 0.15;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes mcal-grow-width {
+  from {
+    width: 0;
+  }
+}
+
+@keyframes mcal-ring {
+  0% {
+    box-shadow: 0 0 0 0 var(--c-verdant-glow);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgba(61, 220, 132, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(61, 220, 132, 0);
+  }
+}
+
+/* 动效工具类 */
+.anim-fade {
+  animation: mcal-fade-in var(--t-base) var(--ease-out) both;
+}
+.anim-rise {
+  animation: mcal-rise var(--t-slow) var(--ease-out) both;
+}
+.anim-rise-lg {
+  animation: mcal-rise-lg var(--t-slow) var(--ease-out) both;
+}
+.anim-pop {
+  animation: mcal-pop var(--t-base) var(--ease-spring) both;
+}
+.anim-slide-right {
+  animation: mcal-slide-in-right var(--t-slow) var(--ease-out) both;
+}
+.anim-float {
+  animation: mcal-float 4.5s var(--ease-in-out) infinite;
+}
+.anim-pulse {
+  animation: mcal-pulse 1.8s var(--ease-in-out) infinite;
+}
+.anim-ring {
+  animation: mcal-ring 1.6s var(--ease-out) infinite;
+}
+
+/* 列表逐项入场：给第 n 个子项加延迟，营造"铺开"的感觉 */
+.stagger > * {
+  animation: mcal-rise var(--t-slow) var(--ease-out) both;
+}
+.stagger > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.stagger > *:nth-child(2) {
+  animation-delay: 30ms;
+}
+.stagger > *:nth-child(3) {
+  animation-delay: 60ms;
+}
+.stagger > *:nth-child(4) {
+  animation-delay: 90ms;
+}
+.stagger > *:nth-child(5) {
+  animation-delay: 120ms;
+}
+.stagger > *:nth-child(6) {
+  animation-delay: 150ms;
+}
+.stagger > *:nth-child(7) {
+  animation-delay: 180ms;
+}
+.stagger > *:nth-child(8) {
+  animation-delay: 210ms;
+}
+.stagger > *:nth-child(n + 9) {
+  animation-delay: 240ms;
+}
+
+/* 骨架屏（加载中） */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.09) 37%,
+    rgba(255, 255, 255, 0.04) 63%
+  );
+  background-size: 200% 100%;
+  animation: mcal-shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--r-sm);
+}
+
+/* =============================== 布局 =============================== */
+
+.row {
+  display: flex;
+  align-items: center;
+}
+.row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.row-start {
+  display: flex;
+  align-items: flex-start;
+}
+.col {
+  display: flex;
+  flex-direction: column;
+}
+.center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wrap {
+  flex-wrap: wrap;
+}
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+.gap-1 {
+  gap: var(--s-1);
+}
+.gap-2 {
+  gap: var(--s-2);
+}
+.gap-3 {
+  gap: var(--s-3);
+}
+.gap-4 {
+  gap: var(--s-4);
+}
+.gap-5 {
+  gap: var(--s-5);
+}
+.gap-6 {
+  gap: var(--s-6);
+}
+.gap-8 {
+  gap: var(--s-8);
+}
+
+/* =============================== 排版 =============================== */
+
+.mono {
+  font-family: var(--f-mono);
+  font-size: var(--fs-sm);
+  letter-spacing: -0.01em;
+}
+
+.dim {
+  color: var(--c-text-soft);
+}
+.muted {
+  color: var(--c-text-muted);
+}
+.faint {
+  color: var(--c-text-faint);
+}
+.ok {
+  color: var(--c-ok);
+}
+.warn {
+  color: var(--c-warn);
+}
+.err {
+  color: var(--c-error);
+}
+.info {
+  color: var(--c-info);
+}
+.accent {
+  color: var(--c-verdant);
+}
+.bold {
+  font-weight: 600;
+}
+.tight {
+  line-height: var(--lh-tight);
+}
+
+.fs-xs {
+  font-size: var(--fs-xs);
+}
+.fs-sm {
+  font-size: var(--fs-sm);
+}
+.fs-md {
+  font-size: var(--fs-md);
+}
+.fs-lg {
+  font-size: var(--fs-lg);
+}
+.fs-xl {
+  font-size: var(--fs-xl);
+}
+.fs-2xl {
+  font-size: var(--fs-2xl);
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pre-wrap {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.break-all {
+  word-break: break-all;
+}
+
+/* =============================== 卡片 / 面板 =============================== */
+
+.mcal-card {
+  background: var(--g-panel);
+  border: 1px solid var(--c-hairline);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-md), var(--sh-inset);
+  backdrop-filter: blur(12px);
+  position: relative;
+  overflow: hidden;
+}
+
+.mcal-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--g-glass);
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.mcal-card > * {
+  position: relative;
+  z-index: 1;
+}
+
+.mcal-card--flat {
+  background: rgba(20, 25, 36, 0.6);
+  box-shadow: none;
+}
+
+/* 可交互卡片：悬浮抬起 + 边框发光 */
+.mcal-card--interactive {
+  cursor: pointer;
+  transition:
+    transform var(--t-base) var(--ease-out),
+    border-color var(--t-base) var(--ease-out),
+    box-shadow var(--t-base) var(--ease-out);
+}
+
+.mcal-card--interactive:hover {
+  transform: translateY(-2px);
+  border-color: var(--c-hairline-strong);
+  box-shadow: var(--sh-lg), var(--sh-inset);
+}
+
+.mcal-card--interactive:active {
+  transform: translateY(0) scale(0.997);
+  transition-duration: var(--t-fast);
+}
+
+.mcal-card--selected {
+  border-color: rgba(61, 220, 132, 0.5);
+  box-shadow: 0 0 0 1px rgba(61, 220, 132, 0.25), var(--sh-lg);
+}
+
+.mcal-panel {
+  background: rgba(15, 19, 28, 0.72);
+  border: 1px solid var(--c-hairline);
+  border-radius: var(--r-md);
+}
+
+/* =============================== 按钮 =============================== */
+
+.mcal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  padding: 0 var(--s-4);
+  height: 34px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-base);
+  font-weight: 500;
+  white-space: nowrap;
+  border: 1px solid var(--c-hairline);
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--c-text);
+  transition:
+    background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out),
+    transform var(--t-fast) var(--ease-out),
+    box-shadow var(--t-base) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+  position: relative;
+  overflow: hidden;
+}
+
+.mcal-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.085);
+  border-color: var(--c-hairline-strong);
+}
+
+.mcal-btn:active:not(:disabled) {
+  transform: scale(0.975);
+}
+
+.mcal-btn:disabled {
+  opacity: 0.42;
+}
+
+.mcal-btn--primary {
+  background: var(--g-verdant);
+  border-color: transparent;
+  color: #04140b;
+  font-weight: 600;
+  box-shadow: 0 2px 12px var(--c-verdant-glow);
+}
+
+.mcal-btn--primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #4ceb92 0%, #29c174 100%);
+  box-shadow: 0 4px 20px var(--c-verdant-glow);
+}
+
+.mcal-btn--danger {
+  background: linear-gradient(135deg, #ff5f6d 0%, #e04553 100%);
+  border-color: transparent;
+  color: #1a0507;
+  font-weight: 600;
+}
+
+.mcal-btn--danger:hover:not(:disabled) {
+  box-shadow: 0 4px 20px var(--c-redstone-glow);
+}
+
+.mcal-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--c-text-soft);
+}
+
+.mcal-btn--ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--c-text);
+}
+
+.mcal-btn--outline {
+  background: transparent;
+  border-color: var(--c-hairline-strong);
+}
+
+.mcal-btn--sm {
+  height: 26px;
+  padding: 0 var(--s-3);
+  font-size: var(--fs-sm);
+  border-radius: var(--r-sm);
+}
+
+.mcal-btn--lg {
+  height: 44px;
+  padding: 0 var(--s-6);
+  font-size: var(--fs-md);
+  border-radius: var(--r-md);
+}
+
+.mcal-btn--icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--r-sm);
+}
+
+.mcal-btn--icon.mcal-btn--sm {
+  width: 26px;
+  height: 26px;
+}
+
+.mcal-btn--block {
+  width: 100%;
+}
+
+/* 按钮里的加载态：文字变淡，叠一个转圈 */
+.mcal-btn--loading .mcal-btn__label {
+  opacity: 0.4;
+}
+
+.mcal-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: mcal-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+/* =============================== 表单控件 =============================== */
+
+.mcal-input,
+.mcal-textarea,
+.mcal-select {
+  width: 100%;
+  height: 34px;
+  padding: 0 var(--s-3);
+  background: rgba(6, 8, 12, 0.6);
+  border: 1px solid var(--c-hairline);
+  border-radius: var(--r-md);
+  color: var(--c-text);
+  font-size: var(--fs-base);
+  transition:
+    border-color var(--t-fast) var(--ease-out),
+    box-shadow var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+.mcal-textarea {
+  height: auto;
+  min-height: 84px;
+  padding: var(--s-3);
+  line-height: var(--lh-relaxed);
+  resize: vertical;
+  font-family: inherit;
+}
+
+.mcal-input::placeholder,
+.mcal-textarea::placeholder {
+  color: var(--c-text-faint);
+}
+
+.mcal-input:hover,
+.mcal-textarea:hover,
+.mcal-select:hover {
+  border-color: var(--c-hairline-strong);
+}
+
+.mcal-input:focus,
+.mcal-textarea:focus,
+.mcal-select:focus {
+  border-color: rgba(61, 220, 132, 0.55);
+  box-shadow: 0 0 0 3px rgba(61, 220, 132, 0.12);
+  background: rgba(6, 8, 12, 0.85);
+  outline: none;
+}
+
+.mcal-input--invalid {
+  border-color: rgba(255, 95, 109, 0.6);
+}
+
+.mcal-select {
+  appearance: none;
+  padding-right: var(--s-8);
+  cursor: pointer;
+}
+
+.mcal-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.mcal-field__label {
+  font-size: var(--fs-sm);
+  color: var(--c-text-soft);
+  font-weight: 500;
+}
+
+.mcal-field__hint {
+  font-size: var(--fs-xs);
+  color: var(--c-text-muted);
+  line-height: var(--lh-relaxed);
+}
+
+.mcal-field__error {
+  font-size: var(--fs-xs);
+  color: var(--c-error);
+}
+
+/* 开关 */
+.mcal-switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border-radius: var(--r-full);
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--c-hairline);
+  transition: background var(--t-base) var(--ease-out);
+  flex-shrink: 0;
+}
+
+.mcal-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #dfe6f5;
+  transition: transform var(--t-base) var(--ease-spring);
+  box-shadow: var(--sh-sm);
+}
+
+.mcal-switch--on {
+  background: var(--g-verdant);
+  border-color: transparent;
+}
+
+.mcal-switch--on::after {
+  transform: translateX(16px);
+  background: #04140b;
+}
+
+/* 分段控件 */
+.mcal-segmented {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: rgba(6, 8, 12, 0.55);
+  border: 1px solid var(--c-hairline);
+  border-radius: var(--r-md);
+}
+
+.mcal-segmented__item {
+  padding: 5px var(--s-3);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sm);
+  color: var(--c-text-soft);
+  transition:
+    background var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+}
+
+.mcal-segmented__item:hover {
+  color: var(--c-text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mcal-segmented__item--active {
+  background: rgba(61, 220, 132, 0.16);
+  color: var(--c-verdant);
+  box-shadow: inset 0 0 0 1px rgba(61, 220, 132, 0.25);
+}
+
+/* 滑杆 */
+.mcal-slider {
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+}
+
+.mcal-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--c-verdant);
+  box-shadow: 0 0 0 3px rgba(61, 220, 132, 0.18);
+  transition: box-shadow var(--t-fast) var(--ease-out);
+}
+
+.mcal-slider::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 0 6px rgba(61, 220, 132, 0.22);
+}
+
+/* =============================== 徽标 / 标签 =============================== */
+
+.mcal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  height: 20px;
+  padding: 0 var(--s-2);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--c-text-soft);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.mcal-badge--ok {
+  background: rgba(61, 220, 132, 0.14);
+  color: var(--c-verdant);
+  border-color: rgba(61, 220, 132, 0.24);
+}
+.mcal-badge--warn {
+  background: rgba(255, 157, 77, 0.14);
+  color: var(--c-ember);
+  border-color: rgba(255, 157, 77, 0.24);
+}
+.mcal-badge--err {
+  background: rgba(255, 95, 109, 0.14);
+  color: var(--c-redstone);
+  border-color: rgba(255, 95, 109, 0.24);
+}
+.mcal-badge--info {
+  background: rgba(79, 214, 232, 0.14);
+  color: var(--c-diamond);
+  border-color: rgba(79, 214, 232, 0.24);
+}
+.mcal-badge--violet {
+  background: rgba(177, 140, 255, 0.14);
+  color: var(--c-amethyst);
+  border-color: rgba(177, 140, 255, 0.24);
+}
+.mcal-badge--gold {
+  background: rgba(245, 196, 81, 0.14);
+  color: var(--c-gold);
+  border-color: rgba(245, 196, 81, 0.24);
+}
+
+/* 可点击的筛选项 */
+.mcal-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  height: 28px;
+  padding: 0 var(--s-3);
+  border-radius: var(--r-full);
+  font-size: var(--fs-sm);
+  color: var(--c-text-soft);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--c-hairline);
+  transition: all var(--t-fast) var(--ease-out);
+}
+
+.mcal-chip:hover {
+  color: var(--c-text);
+  border-color: var(--c-hairline-strong);
+}
+
+.mcal-chip--active {
+  background: rgba(61, 220, 132, 0.16);
+  border-color: rgba(61, 220, 132, 0.4);
+  color: var(--c-verdant);
+}
+
+/* =============================== 进度 =============================== */
+
+.mcal-progress {
+  height: 6px;
+  border-radius: var(--r-full);
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  position: relative;
+}
+
+.mcal-progress__bar {
+  height: 100%;
+  border-radius: var(--r-full);
+  background: var(--g-verdant);
+  transition: width var(--t-base) var(--ease-out);
+  position: relative;
+}
+
+/* 不确定进度：来回滑动 */
+.mcal-progress--indeterminate .mcal-progress__bar {
+  width: 35% !important;
+  animation: mcal-indeterminate 1.4s var(--ease-in-out) infinite;
+}
+
+@keyframes mcal-indeterminate {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+/* 进度条上的流光 */
+.mcal-progress__bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.35) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: mcal-shimmer 1.8s linear infinite;
+}
+
+/* =============================== 空状态 =============================== */
+
+.mcal-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-3);
+  padding: var(--s-10) var(--s-6);
+  text-align: center;
+  color: var(--c-text-muted);
+}
+
+.mcal-empty__icon {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-lg);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed var(--c-hairline-strong);
+  color: var(--c-text-faint);
+}
+
+/* =============================== 表格 / 列表 =============================== */
+
+.mcal-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.mcal-list__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  transition: background var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+}
+
+.mcal-list__row:hover {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: var(--c-hairline);
+}
+
+/* =============================== 分隔线 =============================== */
+
+.mcal-divider {
+  height: 1px;
+  background: var(--c-hairline);
+  border: none;
+  flex-shrink: 0;
+}
+
+.mcal-divider--vertical {
+  width: 1px;
+  height: auto;
+  align-self: stretch;
+}
+
+/* =============================== 提示气泡 =============================== */
+
+.mcal-tooltip {
+  position: relative;
+}
+
+.mcal-tooltip__content {
+  position: absolute;
+  z-index: var(--z-tooltip);
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  background: rgba(6, 8, 12, 0.96);
+  border: 1px solid var(--c-hairline-strong);
+  color: var(--c-text);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  white-space: pre-wrap;
+  max-width: 300px;
+  box-shadow: var(--sh-lg);
+  pointer-events: none;
+  animation: mcal-fade-in var(--t-fast) var(--ease-out) both;
+}
+
+/* =============================== 模态 =============================== */
+
+.mcal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: rgba(4, 6, 10, 0.66);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  padding: var(--s-6);
+  animation: mcal-fade-in var(--t-base) var(--ease-out) both;
+}
+
+.mcal-modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(165deg, #1a2130 0%, #11161f 100%);
+  border: 1px solid var(--c-hairline-strong);
+  border-radius: var(--r-xl);
+  box-shadow: var(--sh-xl);
+  animation: mcal-pop var(--t-base) var(--ease-spring) both;
+  overflow: hidden;
+}
+
+.mcal-modal--wide {
+  max-width: 860px;
+}
+
+.mcal-modal__header {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-5);
+  border-bottom: 1px solid var(--c-hairline);
+}
+
+.mcal-modal__body {
+  padding: var(--s-5);
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.mcal-modal__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-5);
+  border-top: 1px solid var(--c-hairline);
+  background: rgba(6, 8, 12, 0.35);
+}
+
+/* =============================== 通知 =============================== */
+
+.mcal-toasts {
+  position: fixed;
+  right: var(--s-5);
+  bottom: var(--s-5);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  max-width: 380px;
+  pointer-events: none;
+}
+
+.mcal-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border-radius: var(--r-md);
+  background: rgba(20, 25, 36, 0.97);
+  border: 1px solid var(--c-hairline-strong);
+  border-left: 3px solid var(--c-text-muted);
+  box-shadow: var(--sh-lg);
+  animation: mcal-slide-in-right var(--t-base) var(--ease-out) both;
+}
+
+.mcal-toast--ok {
+  border-left-color: var(--c-ok);
+}
+.mcal-toast--warn {
+  border-left-color: var(--c-warn);
+}
+.mcal-toast--err {
+  border-left-color: var(--c-error);
+}
+.mcal-toast--info {
+  border-left-color: var(--c-info);
+}
+
+/* =============================== 标签页 =============================== */
+
+.mcal-tabs {
+  display: flex;
+  gap: var(--s-1);
+  border-bottom: 1px solid var(--c-hairline);
+  padding: 0 var(--s-1);
+}
+
+.mcal-tab {
+  position: relative;
+  padding: var(--s-3) var(--s-4);
+  font-size: var(--fs-base);
+  color: var(--c-text-muted);
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.mcal-tab:hover {
+  color: var(--c-text-soft);
+}
+
+.mcal-tab--active {
+  color: var(--c-text);
+}
+
+/* 下划线用 scaleX 动画，比宽度过渡更顺滑 */
+.mcal-tab--active::after {
+  content: '';
+  position: absolute;
+  left: var(--s-3);
+  right: var(--s-3);
+  bottom: -1px;
+  height: 2px;
+  border-radius: var(--r-full);
+  background: var(--g-verdant);
+  animation: mcal-tab-underline var(--t-base) var(--ease-out) both;
+}
+
+@keyframes mcal-tab-underline {
+  from {
+    transform: scaleX(0.2);
+    opacity: 0;
+  }
+  to {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}
+
+/* =============================== 页面骨架 =============================== */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  animation: mcal-rise var(--t-slow) var(--ease-out) both;
+}
+
+.page__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding: var(--s-5) var(--s-6) var(--s-4);
+  flex-shrink: 0;
+}
+
+.page__title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.page__title h2 {
+  font-size: var(--fs-xl);
+}
+
+.page__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--s-6) var(--s-6);
+}
+
+/* 两栏页面（列表 + 详情） */
+.split {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) 1fr;
+  gap: var(--s-4);
+  height: 100%;
+  min-height: 0;
+}
+
+.split__aside {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.split__main {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* =============================== 日志视图 =============================== */
+
+.log-view {
+  font-family: var(--f-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  background: #05070b;
+  border: 1px solid var(--c-hairline);
+  border-radius: var(--r-md);
+  padding: var(--s-3);
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.log-view__line--error {
+  color: #ff8b96;
+}
+.log-view__line--warn {
+  color: #ffc27a;
+}
+.log-view__line--info {
+  color: #a8b6cc;
+}
+.log-view__line--debug {
+  color: #6c7893;
+}
+
+/* =============================== Markdown =============================== */
+
+.markdown {
+  color: var(--c-text);
+  font-size: var(--fs-md);
+  line-height: var(--lh-relaxed);
+  word-break: break-word;
+}
+
+.markdown > * + * {
+  margin-top: var(--s-3);
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  margin-top: var(--s-5);
+  color: #fff;
+}
+
+.markdown h1 {
+  font-size: var(--fs-xl);
+}
+.markdown h2 {
+  font-size: var(--fs-lg);
+  padding-bottom: var(--s-2);
+  border-bottom: 1px solid var(--c-hairline);
+}
+.markdown h3 {
+  font-size: var(--fs-md);
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: var(--s-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.markdown li::marker {
+  color: var(--c-verdant);
+}
+
+.markdown code {
+  font-family: var(--f-mono);
+  font-size: 0.92em;
+  padding: 1px 5px;
+  border-radius: var(--r-xs);
+  background: rgba(255, 255, 255, 0.08);
+  color: #9fe8bf;
+}
+
+.markdown pre {
+  background: #05070b;
+  border: 1px solid var(--c-hairline);
+  border-radius: var(--r-md);
+  padding: var(--s-3) var(--s-4);
+  overflow-x: auto;
+  font-size: var(--fs-sm);
+}
+
+.markdown pre code {
+  background: none;
+  padding: 0;
+  color: #cfe0f5;
+}
+
+.markdown blockquote {
+  border-left: 3px solid var(--c-verdant-deep);
+  padding-left: var(--s-4);
+  color: var(--c-text-soft);
+}
+
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--c-hairline);
+  padding: var(--s-2) var(--s-3);
+  text-align: left;
+}
+
+.markdown th {
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 600;
+}
+
+.markdown hr {
+  border: none;
+  height: 1px;
+  background: var(--c-hairline);
+}
+
+.markdown strong {
+  color: #fff;
+  font-weight: 600;
+}
+
+/* =============================== 极光背景（动态审美） =============================== */
+
+.aurora-bg {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+  opacity: 0.5;
+}
+
+.aurora-bg__blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  will-change: transform;
+}
+
+.aurora-bg__blob--1 {
+  width: 46vw;
+  height: 46vw;
+  left: -8vw;
+  top: -10vw;
+  background: radial-gradient(circle, rgba(61, 220, 132, 0.32), transparent 68%);
+  animation: mcal-aurora 26s var(--ease-in-out) infinite;
+}
+
+.aurora-bg__blob--2 {
+  width: 40vw;
+  height: 40vw;
+  right: -6vw;
+  top: 6vh;
+  background: radial-gradient(circle, rgba(79, 214, 232, 0.24), transparent 68%);
+  animation: mcal-aurora 34s var(--ease-in-out) infinite reverse;
+}
+
+.aurora-bg__blob--3 {
+  width: 38vw;
+  height: 38vw;
+  left: 28vw;
+  bottom: -16vh;
+  background: radial-gradient(circle, rgba(177, 140, 255, 0.2), transparent 68%);
+  animation: mcal-aurora 30s var(--ease-in-out) infinite;
+}
+
+/* 细网格纹理：给暗部一点"材质感"，避免大面积纯色的廉价感 */
+.grid-texture {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 78%);
+}
+
+/* =============================== 滚动容器 =============================== */
+.scroll-y {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.scroll-x {
+  overflow-x: auto;
+  min-height: 0;
+}
+
+/* 隐藏滚动条但保留滚动能力（横向 chip 列） */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}

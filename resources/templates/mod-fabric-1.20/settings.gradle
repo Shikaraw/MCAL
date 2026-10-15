@@ -1,0 +1,16 @@
+// Fabric 模组的 settings.gradle：插件从 Fabric Maven 解析
+pluginManagement {
+    repositories {
+        // 国内加速（可选，取消注释即可；官方源必须保留）
+        // maven { name = 'BMCLAPI'; url = 'https://bmclapi2.bangbang93.com/maven' }
+        // maven { name = 'Aliyun'; url = 'https://maven.aliyun.com/repository/public' }
+
+        maven {
+            name = 'Fabric'
+            url = 'https://maven.fabricmc.net/'
+        }
+        gradlePluginPortal()
+    }
+}
+
+rootProject.name = '{{modid}}'

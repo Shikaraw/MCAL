@@ -1,0 +1,52 @@
+{
+  "id": "modpack-mcal",
+  "name": "整合包工程（MCAL / Modrinth / CurseForge）",
+  "kind": "modpack",
+  "loader": "fabric",
+  "description": "整合包工程骨架：mcal-pack.json（ModpackManifest 示例）、overrides 目录约定，以及如何导出为 Modrinth / CurseForge / MCAL 三种格式。",
+  "variables": [
+    {
+      "key": "name",
+      "label": "整合包名称",
+      "default": "My Modpack",
+      "required": true
+    },
+    {
+      "key": "author",
+      "label": "作者",
+      "default": "YourName"
+    },
+    {
+      "key": "modVersion",
+      "label": "整合包版本",
+      "default": "1.0.0"
+    },
+    {
+      "key": "gameVersion",
+      "label": "目标游戏版本",
+      "default": "1.20.1",
+      "note": "写进 manifest 的 gameVersion；1.20.1 / 1.21 等"
+    },
+    {
+      "key": "loaderType",
+      "label": "加载器",
+      "default": "fabric",
+      "note": "vanilla / fabric / forge / neoforge / quilt"
+    },
+    {
+      "key": "loaderVersion",
+      "label": "加载器版本",
+      "default": "0.15.11",
+      "note": "fabric-loader / forge 47.x / neoforge 21.x；不确定可留默认后改 manifest"
+    },
+    {
+      "key": "license",
+      "label": "协议",
+      "default": "MIT"
+    }
+  ],
+  "ignore": [],
+  "postInstallNote": "mcal-pack.json 里的 files[] 只是示例条目：请把 platform.versionId（Modrinth 版本 id）或 downloads/hashes 换成真实值，或直接在 MCAL 里用「导入实例 → 导出整合包」自动生成。",
+  "installDir": ".minecraft",
+  "gameVersion": "1.20.1"
+}

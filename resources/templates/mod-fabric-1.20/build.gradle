@@ -1,0 +1,93 @@
+// ---------------------------------------------------------------------
+//  Fabric 模组构建脚本（MC 1.20.1 / Java 17）
+//  结构对齐 fabric-example-mod，可按需增删。
+// ---------------------------------------------------------------------
+
+plugins {
+    // fabric-loom：负责下载 MC、应用 Yarn 映射、Remap 产物
+    // 版本号取自 gradle.properties（loom_version），避免写死在脚本里
+    id 'fabric-loom' version "${loom_version}"
+    id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    // ------------------------------------------------------------------
+    // 国内加速源（按需取消注释；注意官方源必须保留，否则找不到 loom/MC）
+    //
+    //  1) 阿里云公共仓库：代理 mavenCentral + jcenter 的常见依赖
+    //     maven { name = 'Aliyun'; url = 'https://maven.aliyun.com/repository/public' }
+    //  2) BMCLAPI Maven 镜像：同时代理 Fabric / Forge / Mojang 等仓库
+    //     maven { name = 'BMCLAPI'; url = 'https://bmclapi2.bangbang93.com/maven' }
+    //
+    // Gradle 会按顺序尝试各仓库；加速源放前面、官方源放后面即可。
+    // ------------------------------------------------------------------
+    // maven { name = 'Aliyun'; url = 'https://maven.aliyun.com/repository/public' }
+    // maven { name = 'BMCLAPI'; url = 'https://bmclapi2.bangbang93.com/maven' }
+
+    mavenCentral()
+    maven {
+        name = 'Fabric'
+        url = 'https://maven.fabricmc.net/'
+    }
+}
+
+loom {
+    // 官方示例工程的「主/客户端源码集分离」写法：
+    // src/main 放通用逻辑（服务端也会加载），src/client 放仅客户端逻辑。
+    splitEnvironmentSourceSets()
+
+    mods {
+        '{{modid}}' {
+            sourceSet sourceSets.main
+            sourceSet sourceSets.client
+        }
+    }
+}
+
+dependencies {
+    // Minecraft + Yarn 映射 + 加载器
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+    // Fabric API（提供事件、注册表等常用能力）
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+
+    // 仅客户端需要的依赖用 modClientImplementation，例如：
+    // modClientImplementation "some.client:only-lib:1.0.0"
+}
+
+processResources {
+    // 若你希望版本号由 Gradle 注入（模组文件里写 ${version}），保留这个 expand；
+    // 本模板已把版本号直接写进 fabric.mod.json，所以默认不启用。
+    inputs.property 'version', project.version
+
+    filesMatching('fabric.mod.json') {
+        // expand 'version': project.version
+    }
+}
+
+java {
+    // MC 1.20.1 需要 Java 17；1.20.5+ 才需要 21
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+    withSourcesJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = 'UTF-8'
+    it.options.release = 17
+}
+
+jar {
+    from('LICENSE') {
+        rename { "${it}_${project.base.archivesName.get()}" }
+    }
+}

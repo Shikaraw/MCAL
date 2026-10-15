@@ -1,0 +1,31 @@
+# Bukkit/Paper 插件描述文件。
+# 注意：字段名大小写敏感；main 必须是完整类名；api-version 需与目标服务端主版本一致。
+name: {{ModClassName}}
+version: '{{modVersion}}'
+main: {{package}}.{{ModClassName}}
+api-version: '1.21'
+authors: [{{author}}]
+# 用单引号包住描述，避免描述里的冒号（:）破坏 YAML；
+# 若描述里本身含单引号 '，请写成两个单引号 ''。
+description: '{{description}}'
+# 可选的依赖声明（softdepend 在依赖之后加载但不强制存在）
+# depend: [Vault]
+# softdepend: [PlaceholderAPI]
+
+commands:
+  example:
+    description: 示例命令
+    usage: /example [player]
+    aliases: [ex, examplecmd]
+    permission: {{modid}}.command.example
+    permission-message: 你没有权限执行该命令。
+
+permissions:
+  {{modid}}.command.example:
+    description: 允许使用 /example
+    default: op
+  {{modid}}.admin:
+    description: 插件管理员权限
+    default: op
+    children:
+      {{modid}}.command.example: true

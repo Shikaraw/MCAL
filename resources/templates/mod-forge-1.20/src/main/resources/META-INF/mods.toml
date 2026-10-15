@@ -1,0 +1,43 @@
+modLoader = "javafml"
+loaderVersion = "[47,)"
+license = "{{license}}"
+issueTrackerURL = "https://github.com/example/{{modid}}/issues"
+
+[[mods]]
+# modId 必须与代码里的 @Mod("...") 完全一致，全小写
+modId = "{{modid}}"
+version = "{{modVersion}}"
+displayName = "{{modName}}"
+# 多个作者用逗号分隔
+authors = "{{author}}"
+description = '''
+{{description}}
+'''
+# 可选：模组 logo（256x256 PNG，放在 src/main/resources 下）
+# logoFile = "{{modid}}.png"
+displayURL = "https://example.com/{{modid}}"
+
+# ---------------------------------------------------------------------
+# 依赖声明：每个依赖一个 [[dependencies.<依赖方 modId>]] 块。
+# 字段含义（Forge 1.20.1）：
+#   modId       依赖的模组 id（minecraft / forge / 其它模组）
+#   mandatory   true=缺失时拒绝加载；false=仅提示
+#   versionRange Maven 版本范围语法，例如 [1.20.1,1.21) 、[47,)
+#   ordering    NONE / BEFORE / AFTER（加载顺序）
+#   side        BOTH / CLIENT / SERVER
+# 注意：NeoForge 1.21 起 mandatory 被 type = "required" 取代。
+# ---------------------------------------------------------------------
+
+[[dependencies.{{modid}}]]
+modId = "forge"
+mandatory = true
+versionRange = "[47,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.{{modid}}]]
+modId = "minecraft"
+mandatory = true
+versionRange = "[1.20.1,1.21)"
+ordering = "NONE"
+side = "BOTH"

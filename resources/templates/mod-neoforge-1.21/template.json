@@ -1,0 +1,42 @@
+{
+  "id": "mod-neoforge-1.21",
+  "name": "NeoForge 模组（MC 1.21 / Java 21）",
+  "kind": "mod",
+  "loader": "neoforge",
+  "description": "NeoForge 1.21 最小模组：neoforge.mods.toml（含 type = \"required\" 依赖写法）、ModDevGradle/userdev、DeferredRegister.Items、事件总线注册示例。",
+  "variables": [
+    {
+      "key": "name",
+      "label": "模组名称",
+      "default": "Example Mod",
+      "required": true
+    },
+    {
+      "key": "package",
+      "label": "Java 包名",
+      "default": "com.example.{{modid}}"
+    },
+    {
+      "key": "author",
+      "label": "作者",
+      "default": "YourName"
+    },
+    {
+      "key": "modVersion",
+      "label": "模组版本",
+      "default": "1.0.0"
+    },
+    {
+      "key": "license",
+      "label": "开源协议",
+      "default": "MIT"
+    }
+  ],
+  "ignore": [],
+  "postInstallNote": "NeoForge 1.21 的版本号形如 21.0.x / 21.1.x（第二段跟 MC 小版本走，注意 21.1 对应 MC 1.21.1）。请到 https://projects.neoforged.net/neoforged/neoforge 核对 gradle.properties 里的 neo_version 与插件版本。",
+  "javaVersion": 21,
+  "buildTool": "gradle",
+  "artifactDir": "build/libs",
+  "installDir": "mods",
+  "gameVersion": "1.21"
+}

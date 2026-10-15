@@ -1,0 +1,44 @@
+modLoader = "javafml"
+loaderVersion = "[1,)"
+license = "{{license}}"
+issueTrackerURL = "https://github.com/example/{{modid}}/issues"
+
+[[mods]]
+modId = "{{modid}}"
+version = "{{modVersion}}"
+displayName = "{{modName}}"
+authors = "{{author}}"
+description = '''
+{{description}}
+'''
+displayURL = "https://example.com/{{modid}}"
+
+# ---------------------------------------------------------------------
+# NeoForge 1.21 的依赖声明：注意与 Forge 的差别
+#   - 字段是 type = "required" | "optional"（Forge 1.20.1 用 mandatory = true/false）
+#   - 每个依赖一个 [[dependencies.<依赖方 modId>]] 数组表
+#   - versionRange 使用 Maven 范围语法
+# 漏写 type 会导致依赖被判为 optional 甚至加载报错。
+# ---------------------------------------------------------------------
+
+[[dependencies.{{modid}}]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.0.0,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.{{modid}}]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21,1.22)"
+ordering = "NONE"
+side = "BOTH"
+
+# 可选依赖示例（缺失时仅提示，不影响加载）：
+# [[dependencies.{{modid}}]]
+# modId = "jei"
+# type = "optional"
+# versionRange = "[19,)"
+# ordering = "AFTER"
+# side = "BOTH"

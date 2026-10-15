@@ -1,0 +1,9 @@
+// Paper 插件的 settings.gradle：没有特殊插件仓库需求，保留默认即可
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+
+rootProject.name = '{{modid}}'

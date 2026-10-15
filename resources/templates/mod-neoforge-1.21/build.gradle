@@ -1,0 +1,92 @@
+// ---------------------------------------------------------------------
+//  NeoForge 模组构建脚本（MC 1.21 / Java 21）
+//  结构对齐官方 neoforge MDK（userdev 插件）。
+//
+//  说明：NeoForge 目前有两个官方 Gradle 插件：
+//    - net.neoforged.gradle.userdev（本模板使用，MDK 传统写法）
+//    - net.neoforged.moddev（更新，推荐新工程使用）
+//  两者 API 不同，切换时请参考 https://docs.neoforged.net/
+// ---------------------------------------------------------------------
+
+plugins {
+    id 'java-library'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.neoforged.gradle.userdev' version "${neoform_gradle_version}"
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+// 若需要访问被保护的成员，打开下面这行并创建 accesstransformer.cfg
+// minecraft.accessTransformers.file rootProject.file('src/main/resources/META-INF/accesstransformer.cfg')
+
+runs {
+    // 所有运行配置的公共部分
+    configureEach {
+        systemProperty 'forge.logging.markers', 'REGISTRIES'
+        systemProperty 'forge.logging.console.level', 'debug'
+        // 把本工程的 sourceSet 暴露给游戏（等价于 Forge MDK 的 mods { } 块）
+        modSource project.sourceSets.main
+    }
+
+    client {
+        systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+    }
+
+    server {
+        systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+        programArguments.addAll '--nogui'
+    }
+
+    // 数据生成
+    data {
+        programArguments.addAll '--mod', project.mod_id, '--all',
+                '--output', file('src/generated/resources/').getAbsolutePath(),
+                '--existing', file('src/main/resources/').getAbsolutePath()
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+repositories {
+    // 国内加速（可选）
+    // maven { name = 'Aliyun'; url = 'https://maven.aliyun.com/repository/public' }
+    // maven { name = 'BMCLAPI'; url = 'https://bmclapi2.bangbang93.com/maven' }
+
+    mavenCentral()
+}
+
+dependencies {
+    // NeoForge 本体（userdev 插件自动处理依赖与 remap）
+    implementation "net.neoforged:neoforge:${neo_version}"
+
+    // 第三方库示例：
+    // implementation 'com.example:lib:1.0.0'
+}
+
+// 资源处理：本模板把值直接写死（脚手架已替换 {{ }} 占位符）。
+// 若想改成由 Gradle 注入 ${mod_id} 之类变量，请自行恢复 expand：
+// tasks.named('processResources', ProcessResources).configure { ... }
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes([
+                'Specification-Title'   : mod_id,
+                'Specification-Vendor'  : mod_authors,
+                'Specification-Version' : '1',
+                'Implementation-Title'  : project.name,
+                'Implementation-Version': project.version
+        ])
+    }
+}

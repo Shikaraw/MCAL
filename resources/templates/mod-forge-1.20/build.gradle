@@ -1,0 +1,123 @@
+// ---------------------------------------------------------------------
+//  Forge 模组构建脚本（MC 1.20.1 / Java 17）
+//  结构对齐官方 MDK（forge-1.20.1-47.x.x-mdk）。
+// ---------------------------------------------------------------------
+
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    // ForgeGradle：官方 MDK 使用版本范围，避免写死小版本
+    id 'net.minecraftforge.gradle' version '[6.0.24,6.2)'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+minecraft {
+    // official = Mojang 官方映射（1.20+ 的推荐值，无需 MCP）
+    mappings channel: mapping_channel, version: mapping_version
+
+    // 把 IDE 运行时资源从 src 复制到 run
+    copyIdeResources = true
+
+    // runClient / runServer / runData 的通用配置
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+
+            // 日志：标记与级别（调试期建议 debug，发布期可调 info）
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+
+            // 让 IDE 里能直接运行（mods 从 sourceSets.main 的输出读取）
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        client {
+            property 'forge.enabledGameTestNamespaces', mod_id
+        }
+
+        server {
+            property 'forge.enabledGameTestNamespaces', mod_id
+            args '--nogui'
+        }
+
+        // 数据生成：./gradlew runData 会调用 datagen 输出到 src/generated/resources
+        data {
+            workingDirectory project.file('run-data')
+            args '--mod', mod_id, '--all',
+                 '--output', file('src/generated/resources/'),
+                 '--existing', file('src/main/resources/')
+        }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+repositories {
+    // 国内加速（可选，取消注释即可；官方源保持在后面）
+    // maven { name = 'Aliyun'; url = 'https://maven.aliyun.com/repository/public' }
+    // maven { name = 'BMCLAPI'; url = 'https://bmclapi2.bangbang93.com/maven' }
+
+    mavenCentral()
+}
+
+dependencies {
+    // Forge 本体（由 ForgeGradle 自动做 remap）
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+
+    // 如需第三方库：
+    // implementation fg.deobf('curse.maven:xxx-000000:0000000')
+}
+
+// 资源过滤：把 gradle 变量注入 mods.toml / pack.mcmeta
+// 本模板已把值直接写死在这些文件里（脚手架渲染时替换），如想改用 Gradle 注入，
+// 把文件里的字面值改成 ${mod_id} 形式并打开下面的 expand 即可。
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            forge_version          : forge_version,
+            forge_version_range    : forge_version_range,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors,
+            mod_description        : mod_description
+    ]
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        // expand replaceProperties
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes([
+                'Specification-Title'     : mod_id,
+                'Specification-Vendor'    : mod_authors,
+                'Specification-Version'   : '1',
+                'Implementation-Title'    : project.name,
+                'Implementation-Version'  : project.jar.archiveVersion,
+                'Implementation-Vendor'   : mod_authors
+        ])
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}

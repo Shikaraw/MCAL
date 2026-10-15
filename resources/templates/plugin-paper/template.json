@@ -1,0 +1,42 @@
+{
+  "id": "plugin-paper",
+  "name": "Paper 插件（服务端 / Java 21）",
+  "kind": "plugin",
+  "loader": "custom",
+  "description": "Paper 服务端插件骨架：paper-api + JavaPlugin 主类、CommandExecutor/TabCompleter 命令、事件监听、plugin.yml（commands/permissions）。",
+  "variables": [
+    {
+      "key": "name",
+      "label": "插件名称",
+      "default": "Example Plugin",
+      "required": true
+    },
+    {
+      "key": "package",
+      "label": "Java 包名",
+      "default": "com.example.{{modid}}"
+    },
+    {
+      "key": "author",
+      "label": "作者",
+      "default": "YourName"
+    },
+    {
+      "key": "modVersion",
+      "label": "插件版本",
+      "default": "1.0.0"
+    },
+    {
+      "key": "license",
+      "label": "开源协议",
+      "default": "MIT"
+    }
+  ],
+  "ignore": [],
+  "postInstallNote": "Paper 的 api-version 必须与目标服务端主版本一致（1.21 用 '1.21'）；paper-api 的版本号形如 1.21-R0.1-SNAPSHOT，若构建时快照不存在，去 https://repo.papermc.io/ 确认当前可用版本。",
+  "javaVersion": 21,
+  "buildTool": "gradle",
+  "artifactDir": "build/libs",
+  "installDir": "plugins",
+  "gameVersion": "1.21"
+}

@@ -1,0 +1,16 @@
+node_modules/
+out/
+dist/
+release/
+.vite/
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+coverage/
+*.tsbuildinfo
+
+# PCL2 / HMCL 上游源码：仅供本地对照阅读，第三方许可证（HMCL 为 GPL-3.0）
+# 与本项目 MIT 不兼容，不纳入版本库。需要时自行拉取到 reference/ 下。
+reference/

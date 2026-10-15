@@ -1,0 +1,34 @@
+{
+  "id": "shaderpack-iris",
+  "name": "光影包骨架（Iris / OptiFine）",
+  "kind": "shaderpack",
+  "loader": "custom",
+  "description": "Iris/OptiFine 通用的光影包骨架：gbuffers/composite/final 全套最小可用 GLSL 120 着色器、共享 lib/common.glsl 工具函数、地形着色、shaders.properties 设置界面与 #define 选项示例。",
+  "variables": [
+    {
+      "key": "name",
+      "label": "光影包名称",
+      "default": "My Shader",
+      "required": true
+    },
+    {
+      "key": "author",
+      "label": "作者",
+      "default": "YourName"
+    },
+    {
+      "key": "modVersion",
+      "label": "版本",
+      "default": "1.0.0"
+    },
+    {
+      "key": "license",
+      "label": "协议",
+      "default": "MIT"
+    }
+  ],
+  "ignore": [],
+  "postInstallNote": "把整个文件夹压缩成 zip（根目录直接是 shaders/ 与 README）即可导入 Iris/OptiFine；调试时优先用小分辨率窗口 + 逐个启用 #define DEBUG 视图。",
+  "installDir": "shaderpacks",
+  "gameVersion": "any"
+}

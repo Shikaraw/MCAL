@@ -1,0 +1,5 @@
+{
+  "item.{{modid}}.example_item": "Example Item",
+  "block.{{modid}}.example_block": "Example Block",
+  "command.{{modid}}.hello": "Says hello"
+}
