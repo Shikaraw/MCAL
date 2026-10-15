@@ -4,6 +4,8 @@
 
 MCAL 不是"启动器 + 一个聊天窗口"。智能体和启动器是同一套引擎的两个入口：Agent 调用的 `mc_diagnose`、`mc_install_loader`、`dev_scaffold_project` 和你在界面上点按钮走的是同一条代码路径，所以它能真的帮你装版本、查崩溃、写模组，而不是只会"给你一段操作步骤"。
 
+下载见 [Releases](https://github.com/Shikaraw/MCAL/releases)：`MCAL Setup x.y.z.exe` 是安装版，`MCAL Portable x.y.z.exe` 是免安装便携版。想自己构建看[快速开始](#快速开始)。
+
 ---
 
 ## 目录

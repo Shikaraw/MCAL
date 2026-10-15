@@ -57,7 +57,7 @@ export function defaultSettings(rootDir: string): McalSettings {
       source: 'mirror',
       mirrorId: 'ghproxy',
       useSystemProxy: false,
-      repo: 'Shikaraw/MinecraftAgentLauncher'
+      repo: 'Shikaraw/MCAL'
     },
     media: {
       providers: []
@@ -112,6 +112,13 @@ export class SettingsStore {
     // 首次运行自动选一个默认 provider
     if (!this.value.agent.activeProviderId && this.value.providers.length > 0) {
       this.value.agent.activeProviderId = this.value.providers[0].id
+    }
+    // 一次性迁移：早期默认仓库名是开发时的占位名，发布仓库实际叫 Shikaraw/MCAL。
+    // 只迁移「还是那个旧默认值」的配置，用户自己填过的仓库地址一律不动。
+    if (this.value.update.repo === 'Shikaraw/MinecraftAgentLauncher') {
+      this.value.update.repo = 'Shikaraw/MCAL'
+      await this.flush()
+      log.info('更新仓库地址已迁移为 Shikaraw/MCAL（旧默认名）')
     }
     log.info(`配置已加载：${this.file}`)
     return this.value

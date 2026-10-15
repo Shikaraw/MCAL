@@ -32,7 +32,7 @@ describe('mergeSettings', () => {
     expect(merged.agent.confirmSensitive).toBe(true)
     expect(merged.gameDirs).toEqual([])
     expect(merged.update.autoCheck).toBe(true)
-    expect(merged.update.repo).toBe('Shikaraw/MinecraftAgentLauncher')
+    expect(merged.update.repo).toBe('Shikaraw/MCAL')
   })
 
   it('字段被写成 null 时保持默认值，而不是让整个配置变成 null', () => {
@@ -63,6 +63,33 @@ describe('SettingsStore 读写', () => {
       await store.flush()
       const written = JSON.parse(await readFile(file, 'utf8')) as { agent: { accessMode: string } }
       expect(written.agent.accessMode).toBe('workspace')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('旧默认的更新仓库名会迁移到 Shikaraw/MCAL，并落盘', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'mcal-settings-'))
+    try {
+      const file = join(dir, 'settings.json')
+      await writeFile(file, JSON.stringify({ update: { repo: 'Shikaraw/MinecraftAgentLauncher' } }), 'utf8')
+      const store = new SettingsStore({ rootDir: dir, file })
+      expect((await store.load()).update.repo).toBe('Shikaraw/MCAL')
+      await store.flush()
+      const written = JSON.parse(await readFile(file, 'utf8')) as { update: { repo: string } }
+      expect(written.update.repo).toBe('Shikaraw/MCAL')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('用户自己填的更新仓库地址不会被迁移覆盖', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'mcal-settings-'))
+    try {
+      const file = join(dir, 'settings.json')
+      await writeFile(file, JSON.stringify({ update: { repo: 'someone/other-launcher' } }), 'utf8')
+      const store = new SettingsStore({ rootDir: dir, file })
+      expect((await store.load()).update.repo).toBe('someone/other-launcher')
     } finally {
       await rm(dir, { recursive: true, force: true })
     }

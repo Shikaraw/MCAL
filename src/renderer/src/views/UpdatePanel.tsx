@@ -228,7 +228,7 @@ function UpdateSection({ settings }: { settings: McalSettings }): React.JSX.Elem
   const saveConfig = useCallback(async () => {
     const repo = repoDraft.trim()
     if (!repo) {
-      toast.warn('更新仓库不能为空', '需要填 owner/repo 形式，例如 Shikaraw/MinecraftAgentLauncher')
+      toast.warn('更新仓库不能为空', '需要填 owner/repo 形式，例如 Shikaraw/MCAL')
       return
     }
     await updateSettings({ update: { ...update, repo, customPrefix: prefixDraft.trim() } })
