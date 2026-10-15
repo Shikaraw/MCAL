@@ -43,6 +43,12 @@ export interface TemplateManifest {
   dir: string
   /** 需要跳过的文件/目录 */
   ignore?: string[]
+  /**
+   * 生成后需要一并创建的空目录（相对工程根，支持 {{变量}}）。
+   * 用 .gitkeep 占位的隐患是打包工具会剥掉点文件，导致开发版与 exe 生成的工程结构不一致，
+   * 所以空目录改为显式声明。
+   */
+  directories?: string[]
   /** 生成后提示 */
   postInstallNote?: string
   /** 模板目录的绝对路径（扫描时补齐，便于 Scaffolder 读取） */
@@ -237,6 +243,9 @@ export class TemplateRegistry {
     if (loader) manifest.loader = loader
     if (Array.isArray(raw.ignore)) {
       manifest.ignore = raw.ignore.filter((x): x is string => typeof x === 'string')
+    }
+    if (Array.isArray(raw.directories)) {
+      manifest.directories = raw.directories.filter((x): x is string => typeof x === 'string')
     }
     if (typeof raw.postInstallNote === 'string') manifest.postInstallNote = raw.postInstallNote
     if (typeof raw.javaVersion === 'number') manifest.javaVersion = raw.javaVersion

@@ -21,9 +21,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "icon": "node scripts/gen-icon.mjs",
+    "verify:pack": "node scripts/verify-asar.mjs",
+    "verify:asar": "electron scripts/check-asar-read.cjs",
     "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder",
-    "dist:win": "npm run build && electron-builder --win"
+    "dist": "npm run build && electron-builder && npm run verify:pack",
+    "dist:win": "npm run build && electron-builder --win && npm run verify:pack"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",

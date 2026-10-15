@@ -416,6 +416,21 @@ export class Scaffolder {
       renderedPaths.push('.gitignore')
     }
 
+    // 模板声明要保留的空目录（如图片资源目录），显式建出来
+    const declaredDirs = manifest.directories ?? []
+    if (declaredDirs.length > 0) {
+      const missingVars = new Set<string>()
+      const rendered = declaredDirs.map((dir) => renderPath(dir, values, missingVars))
+      const safeDirs = this.sanitizePaths(rendered, warnings)
+      for (const dir of safeDirs) {
+        if (!dir) continue
+        await ensureDir(join(root, dir))
+      }
+      for (const key of missingVars) {
+        warnings.push(`directories 引用了未定义的变量 {{${key}}}：已原样保留，请手工处理。`)
+      }
+    }
+
     const nextSteps: string[] = [`项目已生成到：${root}`, ...buildNextSteps(manifest, values, files.map((f) => f.path))]
     if (opts.initGit) {
       nextSteps.push(

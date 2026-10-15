@@ -46,6 +46,7 @@
     }
   ],
   "ignore": [],
+  "directories": ["overrides/mods"],
   "postInstallNote": "mcal-pack.json 里的 files[] 只是示例条目：请把 platform.versionId（Modrinth 版本 id）或 downloads/hashes 换成真实值，或直接在 MCAL 里用「导入实例 → 导出整合包」自动生成。",
   "installDir": ".minecraft",
   "gameVersion": "1.20.1"

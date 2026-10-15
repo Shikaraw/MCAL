@@ -28,6 +28,7 @@
     }
   ],
   "ignore": [],
+  "directories": ["assets/minecraft/textures/item"],
   "postInstallNote": "pack_format 必须与目标版本匹配：1.20~1.20.1 = 15、1.20.2 = 18、1.20.3~1.20.4 = 22、1.20.5~1.20.6 = 32、1.21 = 34（资源包与数据包是两套编号）。",
   "installDir": "resourcepacks",
   "gameVersion": "1.20.x"

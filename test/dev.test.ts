@@ -8,7 +8,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { TemplateRegistry, resolveDefaultTemplatesRoot, type TemplateManifest } from '@core/dev/templates'
@@ -21,6 +21,7 @@ import {
   toPascalCase
 } from '@core/dev/scaffold'
 import { ProjectBuilder } from '@core/dev/builder'
+import { walkFiles } from '@core/util/fsx'
 
 const TEMPLATES_ROOT = resolveDefaultTemplatesRoot(resolve('.'))
 
@@ -356,7 +357,9 @@ describe('Scaffolder：渲染与落盘', () => {
     expect(manifest.loaderType).toBe('fabric')
     expect(manifest.files.length).toBeGreaterThan(0)
     expect(result.files).toContain('overrides/config/README.md')
-    expect(existsSync(join(target, 'overrides/mods/.gitkeep'))).toBe(true)
+    // 空目录由 template.json 的 directories 声明创建（不再依赖 .gitkeep）
+    expect(existsSync(join(target, 'overrides/mods'))).toBe(true)
+    expect(statSync(join(target, 'overrides/mods')).isDirectory()).toBe(true)
   })
 
   it('未定义变量：警告 + 内容原样保留', async () => {
@@ -471,6 +474,35 @@ describe('Scaffolder：渲染与落盘', () => {
       }
       // README 是中文说明（模板规范要求）
       expect(result.files).toContain('README.md')
+    }
+  })
+
+  it('模板声明的空目录会被创建（不依赖 .gitkeep）', async () => {
+    const target = join(workDir, 'dirs-demo')
+    const result = await scaffolder.scaffold({
+      templateId: 'mod-fabric-1.20',
+      targetDir: target,
+      variables: { name: 'Dir Demo' }
+    })
+
+    // 变量替换要生效：{{modid}} 应变成 dir_demo
+    const blockDir = join(target, 'src/main/resources/assets/dir_demo/textures/block')
+    const itemDir = join(target, 'src/main/resources/assets/dir_demo/textures/item')
+    expect(existsSync(blockDir), 'textures/block 未创建').toBe(true)
+    expect(existsSync(itemDir), 'textures/item 未创建').toBe(true)
+    expect(statSync(blockDir).isDirectory()).toBe(true)
+
+    // 目录属于声明而非文件列表，不要混进 files
+    expect(result.files.some((rel) => rel.includes('.gitkeep'))).toBe(false)
+  })
+
+  it('模板本身不携带任何点文件占位（打包工具会剥掉它们）', async () => {
+    const manifests = await registry.list()
+    for (const manifest of manifests) {
+      const dir = join(TEMPLATES_ROOT, manifest.dir)
+      const entries = await walkFiles(dir)
+      const dotFiles = entries.filter((rel) => rel.split('/').some((seg) => seg.startsWith('.')))
+      expect(dotFiles, `${manifest.id} 含点文件：${dotFiles.join('、')}`).toEqual([])
     }
   })
 })

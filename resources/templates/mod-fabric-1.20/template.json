@@ -36,6 +36,10 @@
     }
   ],
   "ignore": [],
+  "directories": [
+    "src/main/resources/assets/{{modid}}/textures/block",
+    "src/main/resources/assets/{{modid}}/textures/item"
+  ],
   "postInstallNote": "首次构建前请核对 gradle/gradle-wrapper.properties 与 gradle.properties 里的版本号：yarn_mappings / loader_version / fabric_version / loom 版本会随 MC 与 Fabric 更新，以 https://fabricmc.net/develop/ 为准。",
   "javaVersion": 17,
   "buildTool": "gradle",
