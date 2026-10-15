@@ -692,7 +692,7 @@ function ProviderCard({
               value={draft.model}
               onChange={(value) => setDraft((previous) => ({ ...previous, model: value }))}
               monospace
-              placeholder="deepseek-chat"
+              placeholder="服务商文档里的模型名，如 gpt-4o-mini"
             />
           )}
         </Field>

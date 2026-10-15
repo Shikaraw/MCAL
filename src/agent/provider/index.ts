@@ -96,6 +96,16 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     capabilities: { tools: false, vision: false, reasoning: false, promptCache: false },
     note: '本地 OpenAI 兼容服务，需在 LM Studio 中开启 Server',
     docsUrl: 'https://lmstudio.ai'
+  },
+  {
+    id: 'custom',
+    // 空字段由用户自己填：任何 OpenAI 兼容端点都能接进来（自建网关、中转站、公司内网服务…）
+    name: '自定义（OpenAI 兼容）',
+    baseUrl: '',
+    model: '',
+    models: [],
+    capabilities: { tools: true, vision: false, reasoning: false, promptCache: false },
+    note: '填 Base URL 与模型名即可；模型名支持手填，能力开关按服务商实际情况勾选'
   }
 ]
 
