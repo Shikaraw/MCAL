@@ -10,6 +10,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
+import { IPC } from '@shared/types'
 import type { AgentEvent, PermissionRequest, PermissionResponse } from '@shared/types'
 import { logger } from '@core/util/logger'
 import { ensureDir } from '@core/util/fsx'
@@ -66,6 +67,16 @@ function createWindow(): BrowserWindow {
   window.on('ready-to-show', () => {
     window.show()
   })
+
+  // 自绘标题栏：最大化/还原按钮的图标要跟着窗口状态走，
+  // 包括双击标题栏、拖到屏幕边缘吸附这些不经过我们 IPC 的系统手势
+  const pushMaximized = (maximized: boolean): void => {
+    if (!window.isDestroyed()) window.webContents.send(IPC.windowMaximizedChanged, maximized)
+  }
+  window.on('maximize', () => pushMaximized(true))
+  window.on('unmaximize', () => pushMaximized(false))
+  window.on('enter-full-screen', () => pushMaximized(true))
+  window.on('leave-full-screen', () => pushMaximized(false))
 
   // 外部链接交给系统浏览器打开，不在应用内导航
   window.webContents.setWindowOpenHandler(({ url }) => {

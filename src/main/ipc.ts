@@ -485,6 +485,8 @@ export function registerIpc(ctx: IpcContext): () => void {
   for (const [channel, fn] of windowHandlers) {
     ipcMain.on(channel, () => fn())
   }
+  // 自绘标题栏的按钮图标需要知道当前是否最大化（响应式同步靠 index.ts 推送的窗口事件）
+  handle(IPC.windowIsMaximized, () => ctx.getWindow()?.isMaximized() ?? false)
 
   logger.info('ipc', `已注册 ${handles.length} 个 IPC 通道`)
   return () => {

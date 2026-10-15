@@ -1499,6 +1499,8 @@ export const IPC = {
   windowMinimize: 'window:minimize',
   windowMaximize: 'window:maximize',
   windowClose: 'window:close',
+  windowIsMaximized: 'window:is-maximized',
+  windowMaximizedChanged: 'window:maximized-changed',
   appVersion: 'app:version'
 } as const
 
@@ -1677,9 +1679,15 @@ export interface McalApi {
     version(): Promise<{ app: string; electron: string; node: string; chrome: string }>
   }
   window: {
+    /** 运行平台：Windows/Linux 用自绘窗口按钮，macOS 交给系统红绿灯 */
+    platform: NodeJS.Platform
     minimize(): void
+    /** 在最大化与还原之间切换 */
     maximize(): void
     close(): void
+    isMaximized(): Promise<boolean>
+    /** 最大化状态变化（含拖拽到屏幕边缘、双击标题栏等系统手势）；返回取消订阅函数 */
+    onMaximizedChange(cb: (maximized: boolean) => void): () => void
   }
 }
 

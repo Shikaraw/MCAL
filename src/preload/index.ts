@@ -186,9 +186,16 @@ const api: McalApi = {
     version: () => invoke(IPC.appVersion)
   },
   window: {
-    minimize: () => ipcRenderer.send('window:minimize'),
-    maximize: () => ipcRenderer.send('window:maximize'),
-    close: () => ipcRenderer.send('window:close')
+    platform: process.platform,
+    minimize: () => ipcRenderer.send(IPC.windowMinimize),
+    maximize: () => ipcRenderer.send(IPC.windowMaximize),
+    close: () => ipcRenderer.send(IPC.windowClose),
+    isMaximized: () => invoke<boolean>(IPC.windowIsMaximized),
+    onMaximizedChange: (cb: (maximized: boolean) => void) => {
+      const listener = (_event: unknown, maximized: boolean): void => cb(maximized)
+      ipcRenderer.on(IPC.windowMaximizedChanged, listener)
+      return () => ipcRenderer.removeListener(IPC.windowMaximizedChanged, listener)
+    }
   }
 }
 

@@ -258,6 +258,14 @@ export const mcal = {
   /** 生成结果在磁盘上，渲染进程受 CSP 限制读不了 file://，统一走主进程转 data URL */
   readLocalImage: (path: string) => api().media.readImage(path),
 
+  /* ---------- 应用窗口（自绘标题栏） ---------- */
+  windowPlatform: () => api().window.platform,
+  minimizeWindow: () => api().window.minimize(),
+  maximizeWindow: () => api().window.maximize(),
+  closeWindow: () => api().window.close(),
+  isWindowMaximized: () => api().window.isMaximized(),
+  onWindowMaximizedChange: (cb: (maximized: boolean) => void) => api().window.onMaximizedChange(cb),
+
   /* ---------- 任务与系统 ---------- */
   listTasks: () => api().task.list() as Promise<TaskState[]>,
   cancelTask: (taskId: string) => api().task.cancel(taskId),

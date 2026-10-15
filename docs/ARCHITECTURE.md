@@ -16,7 +16,7 @@
 │                         preload/index.ts                             │
 │              ipcRenderer.invoke 包装 + 事件订阅（不改语义）             │
 └───────────────────────────────┬──────────────────────────────────────┘
-                                │ ipcMain.handle（95 个通道）
+                                │ ipcMain.handle（101 个通道）
 ┌───────────────────────────────▼──────────────────────────────────────┐
 │                          main（Electron 主进程）                       │
 │  index.ts 引导 ── container.ts 组装 ── ipc.ts 路由                     │
@@ -167,6 +167,10 @@ fooBar: (opts: FooOpts) => api().foo.bar(opts) as Promise<FooResult>
 
 ## 5. agent —— 智能体运行时
 
+> 本层的整体骨架（主循环 / 工具注册与权限门控 / 会话级授权记忆 / todo 与技能系统）参照
+> **DeepSeek 开源的 agent harness** 设计思路实现，代码全部在本仓库内、不依赖原项目运行时；
+> 差异与完整致谢见 README「开源致谢」一节。
+
 ### harness.ts：主循环
 
 ```
@@ -191,7 +195,9 @@ send(text)
 
 ### tools/registry.ts：权限模型
 
-每个工具声明 `dangerous?: boolean`（能否在 auto-safe 模式下自动放行），并可选提供 `permissionFor(args)` 按参数动态给出授权规格（例如写文件时路径落在工作区内就算低风险）。`resolvePermission(name, args, mode)` 结合全局模式（`readonly` / `auto-safe` / `auto-all` / `ask`）与参数推导出 `allow` / `ask` / `deny`：只读工具永远放行，`readonly` 模式下非只读工具一律拒绝，`auto-safe` 放行非 dangerous 工具，其余弹授权。
+每个工具声明 `dangerous?: boolean`（能否在 auto-safe 模式下自动放行），并可选提供 `permissionFor(args)` 按参数动态给出授权规格（例如写文件时路径落在工作区内就算低风险）。`resolvePermission(name, args, mode, access)` 结合全局模式（`readonly` / `auto-safe` / `auto-all` / `ask`）与参数推导出 `allow` / `ask` / `deny`：只读工具永远放行，`readonly` 模式下非只读工具一律拒绝，`auto-safe` 放行非 dangerous 工具，其余弹授权。
+
+`access` 是第二层门控（访问权限）：`mode: 'workspace' | 'full'` 决定路径沙箱（工具参数里的路径落在允许根之外、或工具声明 `escapesWorkspace` 时，工作区模式下直接 deny 并给出改设置的位置），`confirmSensitive: true` 时对越界写入与 `dangerous` 工具强制升级为 `ask`（风险等级 high），授权结果按工具名在会话内记忆 `grantRememberMs` 毫秒。两层是「权限模式决定要不要问、访问权限决定能不能做」，互不替代。
 
 `ToolResult.meta` 类型是 `unknown` —— 工具可以挂任意结构化结果（`LoaderInstallResult`、`DiagnosticReport`…），harness 用 `asMetaRecord()` 安全降级，避免为了索引签名到处加 `[key: string]: unknown`。
 
@@ -243,7 +249,13 @@ JSON 文件存储。`write()` 时先做相似度检查，≥ 75% 就合并（保
 
 ### 为什么全部手写
 
-启动器要同时放日志流、贴图预览、对话气泡、进度条，组件库的默认样式改造量比自写还大。图标同理：`icons.tsx` 40 个内联 SVG，没有图标字体或 SVG 精灵图的加载开销。Markdown 渲染器（对话用）也是自己写的，因为需要控制代码块、表格与中文排版。
+启动器要同时放日志流、贴图预览、对话气泡、进度条，组件库的默认样式改造量比自写还大。图标同理：`icons.tsx` 39 个内联 SVG（含自绘标题栏的最小化/最大化/还原/关闭），没有图标字体或 SVG 精灵图的加载开销。Markdown 渲染器（对话用）也是自己写的，因为需要控制代码块、表格与中文排版。
+
+### 窗口与标题栏
+
+Windows / Linux 下主窗口是**无边框**的（`frame: false`，见 `main/index.ts`），系统不提供最小化/最大化/关闭按钮，由 `components/layout/TitleBar.tsx` 自绘：整条是 `-webkit-app-region: drag` 拖拽区（CSS 类 `.mcal-titlebar`），右侧三个按钮必须带 `no-drag`，否则点击会被当成拖拽窗口。按钮走 `window:minimize|maximize|close`（fire-and-forget 的 `ipcMain.on`，最大化在按钮里 toggle 成还原）；图标与窗口状态同步靠 `window:is-maximized` 查询 + 主进程推送的 `window:maximized-changed`（双击拖拽区、拖到屏幕边缘吸附这些系统手势不经过我们 IPC，只能靠事件）。macOS 保留系统红绿灯（`titleBarStyle: 'hiddenInset'`），标题栏只留拖拽区并给左侧留 74px 安全间距。
+
+> 往标题栏里加东西时注意：整条是拖拽区，任何可点元素都要加 `.mcal-titlebar__btn`（或自行 `no-drag`），否则点击会被当成拖拽窗口。标题栏是布局里独立的一行（内容区在它下面），不会遮挡页面元素。
 
 ### 状态
 

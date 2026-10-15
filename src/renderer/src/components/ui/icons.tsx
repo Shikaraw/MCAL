@@ -155,6 +155,19 @@ export const IconClose = (p: IconProps) => (
   </Base>
 )
 
+export const IconSquare = (p: IconProps) => (
+  <Base {...p}>
+    <rect x="5.5" y="5.5" width="13" height="13" rx="1.6" />
+  </Base>
+)
+
+export const IconRestore = (p: IconProps) => (
+  <Base {...p}>
+    <rect x="4.5" y="9" width="10.5" height="10.5" rx="1.6" />
+    <path d="M8.6 9V6.1c0-.9.7-1.6 1.6-1.6h7.7c.9 0 1.6.7 1.6 1.6v7.7c0 .9-.7 1.6-1.6 1.6H15" />
+  </Base>
+)
+
 export const IconCheck = (p: IconProps) => (
   <Base {...p}>
     <path d="m4.5 12.5 5 5 10-11" />

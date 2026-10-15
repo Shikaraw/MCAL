@@ -1,27 +1,12 @@
 /** 应用外壳：动态背景、侧边栏导航、主内容区、通知层。 */
 
-import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import {
-  IconBook,
-  IconBox,
-  IconBrain,
-  IconClose,
-  IconCode,
-  IconCoffee,
-  IconCube,
-  IconDownload,
-  IconHome,
-  IconLayers,
-  IconServer,
-  IconSettings,
-  IconSparkles,
-  IconTerminal
-} from '../ui/icons'
+import { IconClose, IconSparkles, IconTerminal } from '../ui/icons'
 import { Button, Tooltip } from '../ui/primitives'
 import { mcal } from '../../lib/api'
-import { useInstances, useSettings, useSystem, useTasks, useToasts, useView, type ViewId } from '../../state/store'
+import { useInstances, useSettings, useSystem, useTasks, useToasts, useView } from '../../state/store'
 import { loaderLabel } from '../../lib/format'
+import { NAV_ITEMS, type NavItem } from './nav'
 
 /** 极光 + 网格背景：给深色界面一点"活"的感觉，但不抢内容注意力 */
 export function Background(): React.JSX.Element {
@@ -36,28 +21,6 @@ export function Background(): React.JSX.Element {
     </>
   )
 }
-
-interface NavItem {
-  id: ViewId
-  label: string
-  icon: ReactNode
-  group: 'game' | 'ai' | 'system'
-}
-
-const NAV_ITEMS: NavItem[] = [
-  { id: 'home', label: '启动', icon: <IconHome size={17} />, group: 'game' },
-  { id: 'instances', label: '实例', icon: <IconCube size={17} />, group: 'game' },
-  { id: 'versions', label: '下载', icon: <IconDownload size={17} />, group: 'game' },
-  { id: 'content', label: '资源', icon: <IconBox size={17} />, group: 'game' },
-  { id: 'modpack', label: '整合包', icon: <IconLayers size={17} />, group: 'game' },
-  { id: 'server', label: '服务端', icon: <IconServer size={17} />, group: 'game' },
-  { id: 'java', label: 'Java', icon: <IconCoffee size={17} />, group: 'game' },
-  { id: 'agent', label: 'AI 助手', icon: <IconSparkles size={17} />, group: 'ai' },
-  { id: 'memory', label: '记忆', icon: <IconBrain size={17} />, group: 'ai' },
-  { id: 'knowledge', label: '知识库', icon: <IconBook size={17} />, group: 'ai' },
-  { id: 'dev', label: '开发', icon: <IconCode size={17} />, group: 'ai' },
-  { id: 'settings', label: '设置', icon: <IconSettings size={17} />, group: 'system' }
-]
 
 export function Sidebar(): React.JSX.Element {
   const view = useView((state) => state.view)

@@ -353,6 +353,53 @@ h4 {
 
 /* =============================== 布局 =============================== */
 
+/*
+ * 自绘标题栏（Windows / Linux 无边框窗口）。
+ * 整条是拖拽区，其中的按钮必须显式 no-drag，否则点击会被当成"拖窗口"。
+ */
+.mcal-titlebar {
+  -webkit-app-region: drag;
+  flex-shrink: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  padding-left: 14px;
+  border-bottom: 1px solid var(--c-hairline);
+  background: linear-gradient(180deg, rgba(15, 19, 28, 0.94) 0%, rgba(10, 13, 20, 0.88) 100%);
+  position: relative;
+  z-index: 3;
+}
+
+.mcal-titlebar__btn {
+  -webkit-app-region: no-drag;
+  width: 44px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text-soft);
+  background: transparent;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.mcal-titlebar__btn > * {
+  -webkit-app-region: no-drag;
+}
+
+.mcal-titlebar__btn:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--c-text);
+}
+
+.mcal-titlebar__btn:active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.mcal-titlebar__btn--close:hover {
+  background: #d64545;
+  color: #fff;
+}
+
 .row {
   display: flex;
   align-items: center;

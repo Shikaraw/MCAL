@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { Background, Sidebar, StatusStrip, Toasts } from './components/layout/Shell'
+import { TitleBar } from './components/layout/TitleBar'
 import { useInstances, useSettings, useSystem, useTasks, useView } from './state/store'
 import { HomeView } from './views/HomeView'
 import { InstancesView } from './views/InstancesView'
@@ -29,25 +30,38 @@ export function App(): React.JSX.Element {
   }, [loadSettings, refreshInstances, initTasks, loadSystem])
 
   return (
-    <div style={{ position: 'relative', display: 'flex', height: '100%', width: '100%', overflow: 'hidden', background: 'var(--c-void)' }}>
-      <Background />
-      <Sidebar />
-      <main
-        style={{
-          position: 'relative',
-          zIndex: 1,
-          flex: 1,
-          minWidth: 0,
-          display: 'flex',
-          flexDirection: 'column'
-        }}
-      >
-        <StatusStrip />
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          <ViewSwitch view={view} />
-        </div>
-      </main>
-      <Toasts />
+    <div
+      style={{
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        width: '100%',
+        overflow: 'hidden',
+        background: 'var(--c-void)'
+      }}
+    >
+      <TitleBar />
+      <div style={{ position: 'relative', display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        <Background />
+        <Sidebar />
+        <main
+          style={{
+            position: 'relative',
+            zIndex: 1,
+            flex: 1,
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+        >
+          <StatusStrip />
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <ViewSwitch view={view} />
+          </div>
+        </main>
+        <Toasts />
+      </div>
     </div>
   )
 }
