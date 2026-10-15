@@ -90,6 +90,9 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false
+    },
+    "portable": {
+      "artifactName": "MCAL Portable ${version}.${ext}"
     }
   }
 }
