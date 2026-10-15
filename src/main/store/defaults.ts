@@ -17,6 +17,55 @@ export function defaultProviders(): ProviderSettings[] {
   )
 }
 
+/**
+ * 早期版本内置的默认模型。
+ *
+ * 这些模型名在各家的接口上已经下线（deepseek-chat、glm-4.6、qwen-plus…），
+ * 留着只会让用户一升级就吃到 404 / 模型不存在，所以只要某条 provider 的 model
+ * 还停在旧默认值上，就把它升级成当前预设的默认模型。
+ * 用户自己改过的模型名不在这个表里，因此不会被覆盖。
+ */
+const LEGACY_DEFAULT_MODELS: Record<string, string[]> = {
+  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
+  moonshot: ['kimi-k2-0905-preview', 'moonshot-v1-128k', 'moonshot-v1-32k'],
+  zhipu: ['glm-4.6', 'glm-4-plus', 'glm-4-flash'],
+  dashscope: ['qwen-plus', 'qwen-max', 'qwen-turbo'],
+  siliconflow: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct'],
+  openrouter: ['deepseek/deepseek-chat', 'anthropic/claude-3.5-sonnet', 'google/gemini-flash-1.5'],
+  ollama: ['qwen2.5:14b', 'llama3.1:8b', 'mistral-nemo'],
+  lmstudio: ['local-model']
+}
+
+/** 预设 id：provider 可能是从预设复制的（id 形如 deepseek-2），取前缀匹配 */
+function presetIdOf(providerId: string): string | null {
+  for (const preset of PROVIDER_PRESETS) {
+    if (providerId === preset.id || providerId.startsWith(`${preset.id}-`)) return preset.id
+  }
+  return null
+}
+
+/**
+ * 把停在旧默认模型上的 provider 升级到当前预设的默认模型。
+ * 返回升级后的列表（没有需要改的就原样返回，方便调用方判断要不要落盘）。
+ */
+export function migrateProviderModels(providers: ProviderSettings[]): {
+  providers: ProviderSettings[]
+  changed: { id: string; from: string; to: string }[]
+} {
+  const changed: { id: string; from: string; to: string }[] = []
+  const next = providers.map((provider) => {
+    const presetId = presetIdOf(provider.id)
+    if (!presetId) return provider
+    const legacy = LEGACY_DEFAULT_MODELS[presetId]
+    const preset = PROVIDER_PRESETS.find((item) => item.id === presetId)
+    if (!legacy || !preset || !preset.model) return provider
+    if (!legacy.includes(provider.model)) return provider
+    changed.push({ id: provider.id, from: provider.model, to: preset.model })
+    return { ...provider, model: preset.model }
+  })
+  return { providers: next, changed }
+}
+
 /** 首次运行时预置的生图 provider */
 export function defaultImageProviders(): ImageProviderSettings[] {
   return [

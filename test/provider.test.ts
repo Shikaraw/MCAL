@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { PROVIDER_PRESETS, presetToSettings, type ProviderPreset } from '@agent/provider'
-import { defaultProviders } from '../src/main/store/defaults'
+import { defaultProviders, migrateProviderModels } from '../src/main/store/defaults'
 
 /** 约定的 9 个预设 id（最后一个 custom 是留给用户自己填的空模板） */
 const ALL_IDS = ['deepseek', 'moonshot', 'zhipu', 'dashscope', 'siliconflow', 'openrouter', 'ollama', 'lmstudio', 'custom']
@@ -152,5 +152,45 @@ describe('defaultProviders：默认播种', () => {
     expect(presetOf('deepseek').name).not.toBe('自定义服务商')
     // 每次调用都返回全新对象，互不影响
     expect(defaultProviders()[0].model).toBe(presetOf('deepseek').model)
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ *  旧默认模型迁移
+ * ------------------------------------------------------------------ */
+
+describe('migrateProviderModels：旧默认模型升级', () => {
+  const base = { name: 'x', baseUrl: 'https://api.deepseek.com', apiKey: 'k', supportsTools: true, timeoutMs: 1, contextWindow: 1 }
+
+  it('停在旧默认值上的 provider 会升级到新的预设默认模型', () => {
+    const { providers, changed } = migrateProviderModels([
+      { ...base, id: 'deepseek', model: 'deepseek-chat' } as never,
+      { ...base, id: 'zhipu', model: 'glm-4.6' } as never
+    ])
+    expect(providers[0].model).toBe('deepseek-v4.1-flash')
+    expect(providers[1].model).toBe('glm-5.3')
+    expect(changed.map((item) => item.from)).toEqual(['deepseek-chat', 'glm-4.6'])
+  })
+
+  it('用户自己填的模型名不动', () => {
+    const { providers, changed } = migrateProviderModels([
+      { ...base, id: 'deepseek', model: 'my-finetune-v3' } as never
+    ])
+    expect(providers[0].model).toBe('my-finetune-v3')
+    expect(changed).toHaveLength(0)
+  })
+
+  it('从预设复制出来的条目（id 带后缀）同样按前缀匹配', () => {
+    const { providers } = migrateProviderModels([{ ...base, id: 'ollama-2', model: 'qwen2.5:14b' } as never])
+    expect(providers[0].model).toBe('qwen3.8-27b')
+  })
+
+  it('自定义服务商与未知 id 完全不受影响', () => {
+    const { providers, changed } = migrateProviderModels([
+      { ...base, id: 'custom', model: 'gpt-4o-mini' } as never,
+      { ...base, id: 'my-gateway', model: 'deepseek-chat' } as never
+    ])
+    expect(providers.map((item) => item.model)).toEqual(['gpt-4o-mini', 'deepseek-chat'])
+    expect(changed).toHaveLength(0)
   })
 })

@@ -41,7 +41,11 @@ import { buildToolRegistry } from '@agent/tools'
 import { AgentHarness } from '@agent/harness'
 import { createProvider } from '@agent/provider'
 import { SettingsStore } from './store/config-store'
-import { defaultImageProviders, defaultProviders } from './store/defaults'
+import {
+  defaultImageProviders,
+  defaultProviders,
+  migrateProviderModels
+} from './store/defaults'
 import { InstanceStore, ServerLlStore } from './store/instance-store'
 import { TaskManager } from './tasks'
 
@@ -293,6 +297,14 @@ export class ServiceContainer {
     const patch: Partial<McalSettings> = {}
     if (settings.providers.length === 0) patch.providers = defaultProviders()
     if (settings.media.providers.length === 0) patch.media = { providers: defaultImageProviders() }
+    // 升级前留下的过时默认模型：只改「还停在旧默认值上」的条目，用户自己填的模型名不动
+    const migrated = migrateProviderModels(patch.providers ?? settings.providers)
+    if (migrated.changed.length > 0) {
+      patch.providers = migrated.providers
+      for (const item of migrated.changed) {
+        logger.info('settings', `provider ${item.id} 的模型由旧默认值 ${item.from} 升级为 ${item.to}`)
+      }
+    }
     if (Object.keys(patch).length > 0) {
       this.settings.update(patch)
       await this.settings.flush()
