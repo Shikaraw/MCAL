@@ -12,6 +12,8 @@ import type {
   DeepPartial,
   DevTemplate,
   DiagnosticReport,
+  GameDirCandidate,
+  GameDirEntry,
   ImagePreset,
   Instance,
   JavaInstallCandidate,
@@ -40,7 +42,12 @@ import type {
   SystemInfo,
   TaskState,
   ToolDefinition,
+  UpdateAsset,
+  UpdateCheckResult,
+  UpdateDownloadResult,
   VersionListing,
+  VersionInstallPlan,
+  VersionInstallResult,
   VersionManifest
 } from '@shared/types'
 
@@ -76,6 +83,8 @@ export const mcal = {
   listVersions: () => api().version.list() as Promise<VersionListing[]>,
   getManifest: (refresh?: boolean) => api().version.manifest(refresh),
   installVersion: (gameVersion: string) => api().version.install(gameVersion),
+  installVersionPlan: (plan: VersionInstallPlan) =>
+    api().version.installPlan(plan) as Promise<VersionInstallResult>,
   removeVersion: (versionId: string) => api().version.remove(versionId),
   listLoaderVersions: (opts: { loaderType: LoaderInstallRequest['loaderType']; gameVersion?: string }) =>
     api().version.loaderVersions(opts) as Promise<LoaderVersion[]>,
@@ -220,6 +229,18 @@ export const mcal = {
   devScaffold: (opts: { templateId: string; targetDir: string; options: Record<string, string> }) =>
     api().dev.scaffold(opts),
   devBuild: (opts: { dir: string; task?: string }) => api().dev.build(opts),
+
+  /* ---------- 游戏目录 ---------- */
+  detectGameDirs: () => api().gameDir.detect() as Promise<GameDirCandidate[]>,
+  probeGameDir: (path: string) => api().gameDir.probe(path) as Promise<GameDirCandidate>,
+  addGameDir: (path: string, label?: string) => api().gameDir.add(path, label) as Promise<GameDirEntry[]>,
+  removeGameDir: (path: string) => api().gameDir.remove(path) as Promise<GameDirEntry[]>,
+
+  /* ---------- 自动更新 ---------- */
+  checkUpdate: (opts?: { manual?: boolean }) => api().update.check(opts) as Promise<UpdateCheckResult>,
+  downloadUpdate: (asset: UpdateAsset) => api().update.download(asset) as Promise<UpdateDownloadResult>,
+  openUpdateRelease: (url: string) => api().update.openRelease(url),
+  onUpdateEvent: (cb: Parameters<ReturnType<typeof api>['update']['onEvent']>[0]) => api().update.onEvent(cb),
 
   /* ---------- 媒体 ---------- */
   mediaProviders: () => api().media.providers(),

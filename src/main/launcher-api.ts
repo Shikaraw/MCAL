@@ -32,12 +32,23 @@ import type {
   ServerCoreDownload,
   ServerCoreType,
   ServerInstance,
+  VersionInstallPlan,
+  VersionInstallProgress,
+  VersionInstallResult,
   VersionManifest
 } from '@shared/types'
 import type { ServiceContainer } from './container'
 import { logger } from '@core/util/logger'
-import { ensureDir, isDirectory, pathExists, readTextSmart } from '@core/util/fsx'
+import { ensureDir, isDirectory, pathExists, readTextSmart, removePath } from '@core/util/fsx'
 import { requiredJavaMajor } from '@core/java/requirement'
+import {
+  InstallProgressAggregator,
+  defaultInstanceName,
+  describeInstallPlan,
+  loaderLabel,
+  normalizeInstallPlan,
+  splitOptiFineVersion
+} from '@core/mojang/install-plan'
 
 const log = logger.scoped('api')
 
@@ -142,19 +153,27 @@ export class LauncherApi {
 
   /* ------------------------------ 版本 ------------------------------ */
 
-  async listVersions(): Promise<{ id: string; type: string; installed: boolean; loaderType: LoaderType }[]> {
-    const settings = this.container.settings.get()
-    const local = await this.container.repository.listLocalVersions(settings.defaultGameDir).catch(() => [])
-    const localIds = new Set(local.map((v) => v.id))
+  async listVersions(): Promise<{ id: string; type: string; installed: boolean; loaderType: LoaderType; gameDir?: string }[]> {
+    // 版本可能不在默认目录：安装向导允许自选目录，用户登记的游戏目录与实例目录也该被看到
+    const local: { id: string; loaderType: LoaderType; gameDir: string }[] = []
+    const localIds = new Set<string>()
+    for (const dir of this.versionDirs()) {
+      const versions = await this.container.repository.listLocalVersions(dir).catch(() => [])
+      for (const version of versions) {
+        if (localIds.has(version.id)) continue
+        localIds.add(version.id)
+        local.push({ id: version.id, loaderType: version.loaderType, gameDir: dir })
+      }
+    }
     let manifest: VersionManifest | null = null
     try {
       manifest = await this.container.manifest.getManifest()
     } catch (err) {
       log.warn(`获取版本清单失败（将只显示本地版本）：${err instanceof Error ? err.message : String(err)}`)
     }
-    const out: { id: string; type: string; installed: boolean; loaderType: LoaderType }[] = []
+    const out: { id: string; type: string; installed: boolean; loaderType: LoaderType; gameDir?: string }[] = []
     for (const version of local) {
-      out.push({ id: version.id, type: 'installed', installed: true, loaderType: version.loaderType })
+      out.push({ id: version.id, type: 'installed', installed: true, loaderType: version.loaderType, gameDir: version.gameDir })
     }
     if (manifest) {
       for (const summary of manifest.versions) {
@@ -172,10 +191,13 @@ export class LauncherApi {
   async installVersion(gameVersion: string, options?: { onProgress?: (progress: unknown) => void }): Promise<{ versionId: string }> {
     const settings = this.container.settings.get()
     const task = this.container.tasks.create({ kind: 'install-version', label: `安装 Minecraft ${gameVersion}` })
+    const controller = new AbortController()
+    this.container.tasks.registerCancel(task.taskId, () => controller.abort())
     try {
       const result = await this.container.installer.install({
         gameDir: settings.defaultGameDir,
         versionId: gameVersion,
+        signal: controller.signal,
         onProgress: (progress) => {
           this.container.tasks.progress(task.taskId, {
             taskId: task.taskId,
@@ -197,9 +219,214 @@ export class LauncherApi {
       return { versionId: result.versionId }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
+      if (controller.signal.aborted) {
+        this.container.tasks.cancel(task.taskId)
+        throw new Error(`安装 ${gameVersion} 已取消`)
+      }
       this.container.tasks.fail(task.taskId, message)
       throw new Error(`安装 ${gameVersion} 失败：${message}`)
     }
+  }
+
+  /**
+   * 安装向导：把「原版 + 可选加载器 + 可选建实例」作为一次任务完成。
+   * 与 installVersion / installLoader 的区别是一次性决定全部选项，
+   * 中途失败会带上失败阶段，UI 只需展示一个任务的进度。
+   */
+  async installVersionPlan(plan: VersionInstallPlan): Promise<VersionInstallResult> {
+    const settings = this.container.settings.get()
+    const normalized = normalizeInstallPlan(plan, { gameDir: settings.defaultGameDir })
+    // 统一成绝对路径：实例记录里存的是 resolve 后的路径，
+    // 直接比字符串会因为尾随分隔符或大小写差异漏判，进而重复建实例
+    const gameDir = resolve(normalized.gameDir ?? settings.defaultGameDir)
+    const task = this.container.tasks.create({ kind: 'install-version', label: describeInstallPlan(normalized) })
+    // 「取消任务」必须真的停下来：把 abort 一路传到下载器，否则界面显示已取消、后台还在写文件
+    const controller = new AbortController()
+    this.container.tasks.registerCancel(task.taskId, () => controller.abort())
+    const aggregator = new InstallProgressAggregator()
+    let lastMessage = ''
+
+    const publish = (progress: VersionInstallProgress): void => {
+      this.container.tasks.progress(task.taskId, {
+        taskId: task.taskId,
+        label: task.label,
+        completed: progress.completed,
+        total: progress.total,
+        bytesDone: progress.bytesDone,
+        bytesTotal: progress.bytesTotal,
+        speed: progress.speed,
+        etaSeconds: progress.etaSeconds,
+        failures: [],
+        state: 'running'
+      })
+      if (progress.message && progress.message !== lastMessage) {
+        lastMessage = progress.message
+        this.container.tasks.log(task.taskId, progress.message)
+      }
+    }
+
+    const warnings: string[] = []
+    let loaderVersion = normalized.loaderVersion
+    let versionId = normalized.gameVersion
+
+    try {
+      aggregator.enterPhase('vanilla', `下载 Minecraft ${normalized.gameVersion}`)
+      publish(aggregator.snapshot())
+      const vanilla = await this.container.installer.install({
+        gameDir,
+        versionId: normalized.gameVersion,
+        signal: controller.signal,
+        onProgress: (progress) => {
+          // 同一阶段内的文案变化用 setStatus：用 enterPhase 会重复累加已冻结的字节
+          if (progress.message) aggregator.setStatus('vanilla', progress.message)
+          publish(
+            aggregator.update({
+              completed: progress.progress?.completed,
+              total: progress.progress?.total,
+              bytesDone: progress.progress?.bytesDone,
+              bytesTotal: progress.progress?.bytesTotal,
+              speed: progress.progress?.speed,
+              etaSeconds: progress.progress?.etaSeconds
+            })
+          )
+        }
+      })
+      versionId = vanilla.versionId
+
+      if (normalized.loaderType !== 'vanilla') {
+        if (!loaderVersion) {
+          // 没说版本就取最新稳定版（列表按版本号降序返回）
+          const candidates = await this.container.loaders.listVersions(normalized.loaderType, normalized.gameVersion)
+          const picked = candidates.find((item) => item.stable) ?? candidates[0]
+          if (!picked) {
+            throw new Error(`没有找到 ${loaderLabel(normalized.loaderType)} 适配 ${normalized.gameVersion} 的版本`)
+          }
+          loaderVersion = picked.version
+          if (normalized.loaderType === 'optifine') {
+            const parsed = splitOptiFineVersion(picked.version)
+            normalized.optifineType = normalized.optifineType ?? parsed?.type
+            normalized.optifinePatch = parsed?.patch ?? picked.version
+          }
+        }
+
+        aggregator.enterPhase('loader', `安装 ${loaderLabel(normalized.loaderType)} ${loaderVersion}`)
+        publish(aggregator.snapshot())
+        const manager = this.container.loaders.withDeps({
+          signal: controller.signal,
+          onProgress: (progress) => {
+            if (progress.download) {
+              publish(
+                aggregator.update({
+                  completed: progress.download.completed,
+                  total: progress.download.total,
+                  bytesDone: progress.download.bytesDone,
+                  bytesTotal: progress.download.bytesTotal,
+                  speed: progress.download.speed,
+                  etaSeconds: progress.download.etaSeconds
+                })
+              )
+            } else if (progress.message) {
+              aggregator.setStatus('loader', `${progress.phase}：${progress.message}`)
+              publish(aggregator.snapshot())
+            }
+          }
+        })
+        const result = await manager.install({
+          gameDir,
+          versionId: normalized.gameVersion,
+          loaderType: normalized.loaderType,
+          loaderVersion: loaderVersion ?? '',
+          optifineType: normalized.optifineType,
+          optifinePatch: normalized.optifinePatch
+        })
+        versionId = result.versionId
+        loaderVersion = result.loaderVersion ?? loaderVersion
+        warnings.push(...(result.warnings ?? []))
+      }
+
+      let instanceId: string | undefined
+      if (normalized.createInstance) {
+        if (controller.signal.aborted) throw new Error('已取消')
+        aggregator.enterPhase('instance', '创建实例')
+        publish(aggregator.snapshot())
+        const existing = await this.container.instances.list()
+        const sameOne = existing.find((instance) => instance.versionId === versionId && instance.gameDir === gameDir)
+        if (sameOne) {
+          instanceId = sameOne.id
+          this.container.tasks.log(task.taskId, `已存在相同实例「${sameOne.name}」，直接复用`)
+        } else {
+          const instance = await this.createInstance({
+            name: normalized.instanceName,
+            gameDir,
+            versionId,
+            loaderType: normalized.loaderType,
+            loaderVersion
+          })
+          instanceId = instance.id
+        }
+      }
+
+      const finalProgress = aggregator.finish()
+      publish(finalProgress)
+      const result: VersionInstallResult = {
+        gameVersion: normalized.gameVersion,
+        versionId,
+        loaderType: normalized.loaderType,
+        loaderVersion,
+        gameDir,
+        instanceId,
+        warnings
+      }
+      this.container.tasks.complete(task.taskId, result)
+      return result
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      const phase = aggregator.snapshot().phase
+      const phaseText = phase === 'loader' ? '加载器安装阶段' : phase === 'instance' ? '创建实例阶段' : '原版下载阶段'
+      if (controller.signal.aborted) {
+        // 用户主动取消：不要报成失败，也不要让 UI 提示去换镜像
+        this.container.tasks.cancel(task.taskId)
+        throw new Error(`${describeInstallPlan(normalized)} 已取消（${phaseText}）`)
+      }
+      this.container.tasks.fail(task.taskId, message)
+      throw new Error(`${describeInstallPlan(normalized)} 失败（${phaseText}）：${message}`)
+    }
+  }
+
+  /** 可能放着版本的目录：默认目录 + 登记的游戏目录 + 实例目录 */
+  private versionDirs(): string[] {
+    const settings = this.container.settings.get()
+    const candidates = [
+      settings.defaultGameDir,
+      ...settings.gameDirs.map((entry) => entry.path),
+      ...this.container.instancesMemo.map((instance) => instance.gameDir)
+    ]
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const dir of candidates) {
+      if (!dir) continue
+      const absolute = resolve(dir)
+      const key = absolute.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      out.push(absolute)
+    }
+    return out
+  }
+
+  /** 删除已安装版本：按 id 在候选目录里找出真实位置 */
+  async deleteVersion(versionId: string, gameDir?: string): Promise<void> {
+    if (!/^[\w.+-]+$/.test(versionId)) throw new Error(`非法的版本 id：${versionId}`)
+    const candidates = gameDir ? [resolve(gameDir)] : this.versionDirs()
+    const removed: string[] = []
+    for (const dir of candidates) {
+      const target = join(dir, 'versions', versionId)
+      if (!(await pathExists(target))) continue
+      await removePath(target)
+      removed.push(target)
+      log.info(`已删除版本 ${versionId}：${target}`)
+    }
+    if (removed.length === 0) throw new Error(`没有找到已安装的版本 ${versionId}`)
   }
 
   async verifyVersion(gameDir: string, versionId: string): Promise<{ ok: boolean; detail: string[] }> {
@@ -218,8 +445,11 @@ export class LauncherApi {
       kind: 'install-loader',
       label: `安装 ${req.loaderType} ${req.loaderVersion || ''}`
     })
+    const controller = new AbortController()
+    this.container.tasks.registerCancel(task.taskId, () => controller.abort())
     try {
       const manager = this.container.loaders.withDeps({
+        signal: controller.signal,
         onProgress: (progress) => {
           this.container.tasks.log(task.taskId, `${progress.phase}：${progress.message}`)
           if (progress.download) {
@@ -231,7 +461,8 @@ export class LauncherApi {
       // 安装成功后可选创建实例
       if (req.createInstance) {
         const existing = await this.container.instances.list()
-        const name = req.instanceName ?? `${req.loaderType} ${req.versionId}`
+        // 与安装向导用同一套命名规则，避免出现「fabric 1.20.1」这种生硬的实例名
+        const name = req.instanceName ?? defaultInstanceName(req.versionId, req.loaderType, result.loaderVersion)
         if (!existing.some((instance) => instance.versionId === result.versionId && instance.gameDir === gameDir)) {
           await this.createInstance({
             name,
@@ -246,6 +477,10 @@ export class LauncherApi {
       return result
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
+      if (controller.signal.aborted) {
+        this.container.tasks.cancel(task.taskId)
+        throw new Error(`安装 ${req.loaderType} 已取消`)
+      }
       this.container.tasks.fail(task.taskId, message)
       throw err
     }

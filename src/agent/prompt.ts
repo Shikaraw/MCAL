@@ -31,6 +31,8 @@ export interface PromptContext {
   platform: string
   arch: string
   totalMemoryMB: number
+  /** 当前工作区根目录（与工具沙箱使用同一份数据） */
+  roots: string[]
 }
 
 export async function buildSystemPrompt(ctx: PromptContext): Promise<string> {
@@ -92,6 +94,13 @@ function environmentSection(ctx: PromptContext): string {
   lines.push(`- 默认游戏目录：${ctx.settings.defaultGameDir}`)
   lines.push(`- 下载源：Mojang=${ctx.settings.mirror.mojang}｜Forge=${ctx.settings.mirror.forge}｜Fabric=${ctx.settings.mirror.fabric}｜Modrinth=${ctx.settings.mirror.modrinth}`)
   lines.push(`- Agent 权限模式：${ctx.settings.agent.permissionMode}｜网络工具：${ctx.settings.agent.networkToolsEnabled ? '开' : '关'}｜命令执行：${ctx.settings.agent.shellEnabled ? '开' : '关'}`)
+  lines.push(
+    ctx.settings.agent.accessMode === 'full'
+      ? '- 访问级别：完全访问（可以读写任意路径，但工作区外的写入、删除、命令执行每次都要用户授权）'
+      : '- 访问级别：仅工作区（只能读写下面列出的根目录及其子目录；工作区外的路径会被直接拒绝，run_command 也不可用。' +
+        '需要访问其它位置时，请告诉用户到「设置 → AI 模型 → 访问权限」切换为「完全访问」）'
+  )
+  lines.push(`- 工作区根目录：\n${ctx.roots.map((r) => `  - ${r}`).join('\n')}`)
 
   if (ctx.instances.length === 0) {
     lines.push('\n### 游戏实例\n（暂无实例。用户若不指定实例，先创建或询问。）')

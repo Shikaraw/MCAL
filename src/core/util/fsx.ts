@@ -62,7 +62,13 @@ export async function writeFileAtomic(path: string, data: string | Buffer): Prom
   await ensureDir(dirname(path))
   const tmp = `${path}.${randomUUID().slice(0, 8)}.tmp`
   await writeFile(tmp, data)
-  await rename(tmp, path)
+  try {
+    await rename(tmp, path)
+  } catch (err) {
+    // 目标被别的进程占用时 Windows 的 rename 会直接失败：清掉临时文件再抛错，别在用户目录里留垃圾
+    await rm(tmp, { force: true }).catch(() => undefined)
+    throw err
+  }
 }
 
 export async function readJson<T>(path: string, fallback?: T): Promise<T> {

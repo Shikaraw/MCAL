@@ -1,6 +1,7 @@
 /**
  * 文件系统工具集。
  * 所有路径都经过 ctx.roots 沙箱校验；写入类工具默认需要用户确认。
+ * 访问级别为 full 时沙箱放开（越界操作已由 registry 在调用前要求用户授权）。
  */
 
 import { readdir, stat } from 'node:fs/promises'
@@ -38,13 +39,16 @@ function resolveInRoots(ctx: ToolInvocationContext, target: string): string {
 }
 
 function assertInside(absolute: string, ctx: ToolInvocationContext): void {
+  // 完全访问：不再限制路径，越界写操作在 registry 层已经请求过授权
+  if (ctx.accessMode === 'full') return
   const normalized = absolute.replace(/\\/g, '/').toLowerCase()
   for (const root of ctx.roots) {
     const rootNorm = resolve(root).replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '')
     if (normalized === rootNorm || normalized.startsWith(`${rootNorm}/`)) return
   }
   throw new Error(
-    `路径不在允许范围内：${absolute}\n允许的根目录：\n${ctx.roots.map((r) => `  - ${r}`).join('\n')}`
+    `路径不在允许范围内：${absolute}\n允许的根目录：\n${ctx.roots.map((r) => `  - ${r}`).join('\n')}\n` +
+      '当前访问级别为「仅工作区」，如需访问其它位置请在「设置 → AI 模型 → 访问权限」中改为「完全访问」。'
   )
 }
 

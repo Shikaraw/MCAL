@@ -13,6 +13,7 @@ import type {
   JavaInstallCandidate,
   LaunchRequest,
   LoaderInstallRequest,
+  VersionInstallPlan,
   McalSettings,
   ModpackManifest,
   PermissionResponse,
@@ -21,13 +22,16 @@ import type {
   ServerCoreType,
   ServerInstance,
   SystemInfo,
+  UpdateAsset,
   AgentEvent
 } from '@shared/types'
 import { logger } from '@core/util/logger'
 import { pathExists } from '@core/util/fsx'
+import { detectGameDirs, probeGameDir } from '@core/gamedir/detect'
 import { PROVIDER_PRESETS } from '@agent/provider'
 import type { ServiceContainer } from './container'
 import type { LauncherApi } from './launcher-api'
+import type { UpdateService } from './update'
 import { resolvePendingPermission } from './permissions'
 
 export interface IpcContext {
@@ -36,6 +40,8 @@ export interface IpcContext {
   getWindow: () => BrowserWindow | null
   /** 把 Agent 事件推给渲染进程 */
   emitAgentEvent: (sessionId: string, event: AgentEvent) => void
+  /** 更新检查服务（下载进度通过 update:event 广播） */
+  updateService: UpdateService
   onQuit: () => void
 }
 
@@ -134,12 +140,9 @@ export function registerIpc(ctx: IpcContext): () => void {
   handle(IPC.versionList, () => api.listVersions())
   handle(IPC.versionManifest, (refresh?: boolean) => api.getManifest(refresh))
   handle(IPC.versionInstall, (gameVersion: string) => api.installVersion(gameVersion))
-  handle(IPC.versionDelete, async (versionId: string) => {
-    const settings = container.settings.get()
-    const { removePath } = await import('@core/util/fsx')
-    const dir = join(settings.defaultGameDir, 'versions', versionId)
-    await removePath(dir)
-  })
+  handle(IPC.versionInstallPlan, (plan: VersionInstallPlan) => api.installVersionPlan(plan))
+  // 版本可能装在默认目录、登记的游戏目录或实例目录里，交给 api 按 id 找真实位置
+  handle(IPC.versionDelete, (versionId: string, gameDir?: string) => api.deleteVersion(versionId, gameDir))
   handle(IPC.loaderVersions, (opts: { loaderType: never; gameVersion?: string }) => api.listLoaderVersions(opts))
   handle(IPC.loaderInstall, (req: LoaderInstallRequest) => api.installLoader(req))
 
@@ -363,6 +366,54 @@ export function registerIpc(ctx: IpcContext): () => void {
   handle(IPC.mediaProviders, () => container.media.listProviders())
   handle(IPC.mediaGenerate, (opts: never) => container.media.generate(opts))
   handle(IPC.mediaReadImage, async (filePath: string) => readLocalImage(filePath))
+
+  /* ------------------------------ 游戏目录 ------------------------------ */
+  handle(IPC.gameDirDetect, async () => {
+    const known = container.settings.get().gameDirs
+    const [detected] = await Promise.all([
+      detectGameDirs({ known, extraRoots: [container.settings.get().defaultGameDir] })
+    ])
+    return detected
+  })
+  handle(IPC.gameDirProbe, (path: string) => probeGameDir(path, { known: container.settings.get().gameDirs }))
+  handle(IPC.gameDirAdd, async (path: string, label?: string) => {
+    const normalized = resolve(path)
+    if (!(await pathExists(normalized))) throw new Error(`目录不存在：${normalized}`)
+    const probe = await probeGameDir(normalized)
+    // 探测可能耗时数秒：读-改-写之间不能再有 await，否则两次快速添加会互相覆盖
+    const current = container.settings.get().gameDirs
+    if (current.some((entry) => resolve(entry.path).toLowerCase() === normalized.toLowerCase())) return current
+    const next = [
+      ...current,
+      {
+        path: normalized,
+        label: label ?? probe.label,
+        source: 'manual' as const,
+        addedAt: new Date().toISOString()
+      }
+    ]
+    container.settings.update({ gameDirs: next })
+    await container.settings.flush()
+    return next
+  })
+  handle(IPC.gameDirRemove, async (path: string) => {
+    const normalized = resolve(path).toLowerCase()
+    const next = container.settings.get().gameDirs.filter((entry) => resolve(entry.path).toLowerCase() !== normalized)
+    container.settings.update({ gameDirs: next })
+    await container.settings.flush()
+    return next
+  })
+
+  /* ------------------------------ 自动更新 ------------------------------ */
+  handle(IPC.updateCheck, async (opts?: { manual?: boolean }) => {
+    const result = await ctx.updateService.check(opts)
+    // 记录检查时间，顺便让「上次检查」在设置页可见
+    container.settings.update({ update: { lastCheckAt: result.checkedAt } })
+    await container.settings.flush().catch(() => undefined)
+    return result
+  })
+  handle(IPC.updateDownload, (asset: UpdateAsset) => ctx.updateService.download(asset))
+  handle(IPC.updateOpenRelease, (url: string) => ctx.updateService.openRelease(url))
 
   /* ------------------------------ 任务与系统 ------------------------------ */
   handle(IPC.taskList, () => container.tasks.list())

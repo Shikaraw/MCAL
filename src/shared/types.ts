@@ -454,6 +454,59 @@ export interface LoaderInstallResult {
   warnings: string[]
 }
 
+/**
+ * 安装向导的计划：一次决定「装哪个版本 + 装不装加载器 + 装到哪 + 建不建实例」。
+ * 原版与加载器在同一个任务里顺序完成，中途失败会明确停在哪一步。
+ */
+export interface VersionInstallPlan {
+  /** 基础游戏版本，例如 1.21.1 */
+  gameVersion: string
+  /** 目标游戏目录，默认 settings.defaultGameDir */
+  gameDir?: string
+  /** 加载器；null 或省略表示只装原版 */
+  loader?:
+    | {
+        type: LoaderType
+        /** 加载器版本；省略表示用最新/推荐版本 */
+        version?: string
+        /** OptiFine 专用 */
+        optifineType?: string
+        optifinePatch?: string
+      }
+    | null
+  /** 安装完成后创建实例（默认 true） */
+  createInstance?: boolean
+  instanceName?: string
+}
+
+export interface VersionInstallResult {
+  /** 用户选择的基础版本 */
+  gameVersion: string
+  /** 实际落地的版本 id（带加载器时为加载器版本 id） */
+  versionId: string
+  loaderType: LoaderType
+  loaderVersion?: string
+  gameDir: string
+  /** 创建出的实例 id（未创建时为空） */
+  instanceId?: string
+  warnings: string[]
+}
+
+/** 安装向导的进度阶段，用于 UI 显示「正在做什么」 */
+export type VersionInstallPhase = 'preparing' | 'vanilla' | 'loader' | 'instance' | 'done'
+
+export interface VersionInstallProgress {
+  phase: VersionInstallPhase
+  message: string
+  /** 总体进度（按字节累加原版 + 加载器） */
+  completed: number
+  total: number
+  bytesDone: number
+  bytesTotal: number
+  speed: number
+  etaSeconds: number | null
+}
+
 /* ------------------------------------------------------------------ *
  *  启动
  * ------------------------------------------------------------------ */
@@ -751,6 +804,8 @@ export interface PermissionRequest {
   risk: 'low' | 'medium' | 'high'
   /** 该工具支持的持久化选项 */
   scopes: ('once' | 'session' | 'always')[]
+  /** 选择 session 后记忆多久（毫秒）；0 或未提供表示不记忆 */
+  rememberMs?: number
   /** 若被拒绝，agent 收到的提示 */
   denyMessage?: string
 }
@@ -783,12 +838,19 @@ export interface ToolDefinition {
   dangerous?: boolean
   /** 是否需要游戏目录访问权限 */
   requiresPaths?: boolean
+  /**
+   * 执行体可以绕过工作区限制（例如 shell 能 cd 到任意目录再写文件）。
+   * 这类工具在「仅工作区」模式下永远不能自动放行，必须逐次授权。
+   */
+  escapesWorkspace?: boolean
 }
 
 export interface ToolInvocationContext {
   sessionId: string
   /** Agent 可操作的工作区根目录（一般是 launcher 工作目录 + 实例目录） */
   roots: string[]
+  /** 当前访问权限级别：full 时不再拒绝工作区外的路径 */
+  accessMode: 'workspace' | 'full'
   /** 权限询问回调 */
   requestPermission(req: Omit<PermissionRequest, 'id'>): Promise<PermissionResponse>
   /** 向 UI 推送事件 */
@@ -1041,6 +1103,14 @@ export interface ImageProviderSettings {
   sizeParam?: string
 }
 
+export interface GameDirEntry {
+  path: string
+  /** 展示名 */
+  label: string
+  source: GameDirCandidate['source']
+  addedAt: string
+}
+
 export interface McalSettings {
   /** 全局工作根目录（启动器数据目录） */
   rootDir: string
@@ -1091,8 +1161,21 @@ export interface McalSettings {
   agent: {
     /** 当前使用的 provider id */
     activeProviderId?: string
-    /** 权限模式 */
+    /**
+     * 访问权限级别（玩家能看懂的两种）：
+     * - workspace：只允许在游戏目录、实例目录、工作区里读写（默认）
+     * - full：可以访问任意路径，但敏感操作（删除、执行命令、改系统路径）仍需授权
+     */
+    accessMode: 'workspace' | 'full'
+    /**
+     * 细粒度权限模式（accessMode 的具体展开）：
+     * readonly 只读 / auto-safe 工作区内自动放行 / auto-all 全部自动 / ask 每次都问
+     */
     permissionMode: 'ask' | 'auto-safe' | 'auto-all' | 'readonly'
+    /** 敏感操作（删除、shell、系统路径写入）是否强制弹授权，即使处于 full/auto-all */
+    confirmSensitive: boolean
+    /** 单次授权可以记住多久（毫秒），0 表示不记住 */
+    grantRememberMs: number
     /** 会话内自动压缩上下文的阈值（token） */
     compactionThreshold: number
     /** 是否注入记忆 */
@@ -1113,6 +1196,26 @@ export interface McalSettings {
     /** 流式响应 */
     stream: boolean
   }
+  /** 额外的游戏目录（除 defaultGameDir 外，用户手动添加或自动检测确认的） */
+  gameDirs: GameDirEntry[]
+  update: {
+    /** 启动时自动检查更新 */
+    autoCheck: boolean
+    /** 更新源：mirror 走国内镜像前缀，direct 直连 GitHub，custom 用自定义前缀 */
+    source: 'mirror' | 'direct' | 'custom'
+    /** 镜像 id（见 UPDATE_MIRRORS） */
+    mirrorId: string
+    /** 自定义前缀（source=custom 时使用） */
+    customPrefix?: string
+    /** 走系统代理（默认 false：国内代理挂掉时直连镜像反而更稳） */
+    useSystemProxy: boolean
+    /** GitHub 仓库 slug，如 owner/repo */
+    repo: string
+    /** 用户选择跳过的版本号 */
+    skippedVersion?: string
+    /** 上次检查时间（ISO） */
+    lastCheckAt?: string
+  }
   media: {
     activeProviderId?: string
     providers: ImageProviderSettings[]
@@ -1126,6 +1229,92 @@ export interface McalSettings {
     lastView?: string
     sidebarCollapsed?: boolean
   }
+}
+
+/* ------------------------------------------------------------------ *
+ *  游戏目录检测
+ * ------------------------------------------------------------------ */
+
+/** 一个被发现的游戏目录候选 */
+export interface GameDirCandidate {
+  path: string
+  /** 展示名，如「官方启动器」「HMCL」「PCL」 */
+  label: string
+  /** 来源：官方启动器 / 第三方启动器 / 常见位置 / 用户手动 */
+  source: 'official' | 'thirdparty' | 'common' | 'manual'
+  /** 是否已存在于设置中 */
+  added: boolean
+  /** 是否看起来像有效的 .minecraft（有 versions/ 或 launcher_profiles.json） */
+  valid: boolean
+  /** 已安装的版本 id（最多列 20 个） */
+  versions: string[]
+  /** 检测到的加载器种类 */
+  loaders: LoaderType[]
+  /** 版本目录数量 */
+  versionCount: number
+  /** 目录总大小（字节，可能为 0 表示未知） */
+  sizeBytes: number
+  /** 最近修改时间（ISO） */
+  lastModified?: string
+}
+
+/* ------------------------------------------------------------------ *
+ *  自动更新
+ * ------------------------------------------------------------------ */
+
+export interface UpdateMirror {
+  id: string
+  name: string
+  prefix: string
+  note?: string
+}
+
+export interface UpdateAsset {
+  name: string
+  size: number
+  /** 直连地址 */
+  url: string
+  /** 经镜像改写的地址 */
+  mirrorUrl: string
+  /** 是否被识别为本平台的安装包 */
+  recommended: boolean
+}
+
+export interface UpdateAttempt {
+  source: string
+  error: string
+  statusCode?: number
+}
+
+export interface UpdateCheckResult {
+  ok: boolean
+  /** 命中的更新源名称 */
+  source?: string
+  sourceId?: string
+  repo: string
+  currentVersion: string
+  latestVersion?: string
+  tagName?: string
+  hasUpdate?: boolean
+  releaseUrl?: string
+  notes?: string
+  publishedAt?: string | null
+  prerelease?: boolean
+  assets?: UpdateAsset[]
+  /** 失败原因：no-release（仓库还没发版）/ network / disabled */
+  reason?: 'no-release' | 'network' | 'disabled' | 'bad-repo'
+  message?: string
+  attempts: UpdateAttempt[]
+  checkedAt: string
+}
+
+export interface UpdateDownloadResult {
+  ok: boolean
+  file?: string
+  bytes?: number
+  /** 下载使用的地址 */
+  url?: string
+  error?: string
 }
 
 /* ------------------------------------------------------------------ *
@@ -1157,6 +1346,8 @@ export interface VersionListing {
   type: string
   installed: boolean
   loaderType: LoaderType
+  /** 已安装版本所在的游戏目录（可能不是默认目录：向导允许选目录，登记的游戏目录也会被扫描） */
+  gameDir?: string
 }
 
 /* ------------------------------------------------------------------ *
@@ -1189,6 +1380,16 @@ export const IPC = {
   settingsUpdate: 'settings:update',
   settingsPickDir: 'settings:pick-dir',
   settingsPickFile: 'settings:pick-file',
+  // 游戏目录
+  gameDirDetect: 'game-dir:detect',
+  gameDirProbe: 'game-dir:probe',
+  gameDirAdd: 'game-dir:add',
+  gameDirRemove: 'game-dir:remove',
+  // 自动更新
+  updateCheck: 'update:check',
+  updateDownload: 'update:download',
+  updateOpenRelease: 'update:open-release',
+  updateEvent: 'update:event',
   // 实例
   instanceList: 'instance:list',
   instanceCreate: 'instance:create',
@@ -1199,6 +1400,7 @@ export const IPC = {
   versionList: 'version:list',
   versionManifest: 'version:manifest',
   versionInstall: 'version:install',
+  versionInstallPlan: 'version:install-plan',
   versionDelete: 'version:delete',
   loaderVersions: 'loader:versions',
   loaderInstall: 'loader:install',
@@ -1310,6 +1512,36 @@ export interface McalApi {
     pickDir(opts?: { title?: string; defaultPath?: string }): Promise<string | null>
     pickFile(opts?: { title?: string; filters?: { name: string; extensions: string[] }[]; multi?: boolean }): Promise<string[] | null>
   }
+  /** 游戏目录：自动检测 + 手动增删 */
+  gameDir: {
+    /** 扫描本机常见的 .minecraft 位置（顺带识别已装版本与加载器） */
+    detect(): Promise<GameDirCandidate[]>
+    /** 探测单个目录（用户手动选了目录后判断是否可用） */
+    probe(path: string): Promise<GameDirCandidate>
+    /** 加入「已知游戏目录」列表 */
+    add(path: string, label?: string): Promise<GameDirEntry[]>
+    remove(path: string): Promise<GameDirEntry[]>
+  }
+  /** 自动更新 */
+  update: {
+    /** 检查更新；manual=true 时忽略「跳过此版本」与自动检查开关 */
+    check(opts?: { manual?: boolean }): Promise<UpdateCheckResult>
+    /** 下载指定资源（走当前更新源） */
+    download(asset: UpdateAsset): Promise<UpdateDownloadResult>
+    /** 在浏览器打开 Release 页面 */
+    openRelease(url: string): Promise<void>
+    onEvent(
+      cb: (
+        event:
+          | { type: 'progress'; received: number; total: number; label?: string }
+          | { type: 'done'; file: string }
+          /** 所有候选地址都失败：UI 靠它把「下载中」状态复位 */
+          | { type: 'failed'; error: string }
+          /** 检查结果（含启动时的静默检查）：有新版本时 UI 弹提示条，没有时只同步「上次检查」时间 */
+          | { type: 'available'; result: UpdateCheckResult }
+      ) => void
+    ): () => void
+  }
   instance: {
     list(): Promise<Instance[]>
     create(patch: Partial<Instance> & { name: string }): Promise<Instance>
@@ -1321,6 +1553,8 @@ export interface McalApi {
     list(): Promise<VersionListing[]>
     manifest(refresh?: boolean): Promise<VersionManifest>
     install(gameVersion: string): Promise<{ versionId: string }>
+    /** 安装向导：原版 + 可选加载器 + 可选建实例，走同一个任务 */
+    installPlan(plan: VersionInstallPlan): Promise<VersionInstallResult>
     remove(versionId: string): Promise<void>
     loaderVersions(opts: { loaderType: LoaderType; gameVersion?: string }): Promise<LoaderVersion[]>
     installLoader(req: LoaderInstallRequest): Promise<LoaderInstallResult>

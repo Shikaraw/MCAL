@@ -1,14 +1,15 @@
 /**
  * 版本下载与安装页
- *   三个标签页：已安装（可创建实例 / 删除）、可下载（Mojang 清单，分页加载）、加载器（各加载器版本 + 安装）
+ *   三个标签页：已安装（可创建实例 / 删除）、可下载（Mojang 清单，安装走 HMCL 式向导）、加载器（各加载器版本 + 安装）
  *
  * 交互约定：
  *  - 安装版本 / 加载器都是长任务：进度来自 useTasks().tasks（主进程事件推送），显示速率与剩余时间，支持取消；
+ *  - 「可下载」的安装必须先经过向导：基础版本、游戏目录、加载器、实例一次定好才真正开始下载；
  *  - 所有网络请求都有加载态；失败时给出可操作提示（切换到 BMCLAPI 镜像等）；
  *  - 顶部提供下载源（镜像）快捷切换。
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   Instance,
   LoaderType,
@@ -16,6 +17,7 @@ import type {
   McalSettings,
   MirrorId,
   TaskState,
+  VersionInstallPlan,
   VersionManifest,
   VersionSummary
 } from '@shared/types'
@@ -34,6 +36,7 @@ import {
   Progress,
   SearchInput,
   Segmented,
+  Switch,
   Tabs,
   Tooltip
 } from '../components/ui/primitives'
@@ -63,6 +66,16 @@ const LOADER_CHOICES: { value: LoaderType; label: string }[] = [
   { value: 'optifine', label: 'OptiFine' }
 ]
 
+/** 向导里的加载器顺序：按玩家熟悉度排，仅原版最靠前（新玩家多数只需要原版） */
+const WIZARD_LOADER_CHOICES: { value: LoaderType; label: string; recommended?: boolean }[] = [
+  { value: 'vanilla', label: '仅原版', recommended: true },
+  { value: 'fabric', label: 'Fabric' },
+  { value: 'forge', label: 'Forge' },
+  { value: 'neoforge', label: 'NeoForge' },
+  { value: 'quilt', label: 'Quilt' },
+  { value: 'optifine', label: 'OptiFine' }
+]
+
 const MIRROR_LABELS: Record<string, string> = {
   official: '官方',
   bmclapi: 'BMCLAPI',
@@ -72,6 +85,16 @@ const MIRROR_LABELS: Record<string, string> = {
 function guessBaseGameVersion(versionId: string): string {
   const match = /1\.\d+(?:\.\d+)?/.exec(versionId)
   return match ? match[0] : versionId
+}
+
+/**
+ * 实例名默认值：与主进程 defaultInstanceName 的规则保持一致（仅原版 `Minecraft 1.21.1`，
+ * 带加载器 `Fabric 0.16.5 · 1.21.1`），只在用户没手动改过名字时跟随选择变化。
+ */
+function suggestInstanceName(gameVersion: string, loaderType: LoaderType, loaderVersion?: string): string {
+  if (loaderType === 'vanilla') return `Minecraft ${gameVersion}`
+  const suffix = loaderVersion ? ` ${loaderVersion}` : ''
+  return `${loaderLabel(loaderType)}${suffix} · ${gameVersion}`
 }
 
 function latestTask(tasks: TaskState[], kind: string): TaskState | undefined {
@@ -267,7 +290,11 @@ export function VersionsView(): React.JSX.Element {
             error={manifestError}
             onLoad={loadManifest}
             installedIds={new Set((versions ?? []).filter((item) => item.installed).map((item) => item.id))}
-            onInstalled={() => void loadVersions(true)}
+            defaultGameDir={settings?.defaultGameDir ?? ''}
+            onInstalled={() => {
+              void loadVersions(true)
+              void refreshInstances()
+            }}
           />
         ) : (
           <LoaderTab
@@ -625,6 +652,7 @@ function RemoteTab({
   error,
   onLoad,
   installedIds,
+  defaultGameDir,
   onInstalled
 }: {
   manifest: VersionManifest | null
@@ -632,21 +660,14 @@ function RemoteTab({
   error: string | null
   onLoad: (refresh?: boolean) => Promise<void>
   installedIds: Set<string>
+  defaultGameDir: string
   onInstalled: () => void
 }): React.JSX.Element {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('release')
   const [search, setSearch] = useState('')
   const [limit, setLimit] = useState(PAGE_SIZE)
-  const [installing, setInstalling] = useState<string | null>(null)
-
-  const tasks = useTasks((state) => state.tasks)
-
-  const liveTask = useMemo(() => {
-    if (!installing) return undefined
-    return tasks
-      .filter((task) => task.kind === 'install-version' && task.label === `安装 Minecraft ${installing}`)
-      .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))[0]
-  }, [tasks, installing])
+  // 点「安装」只是打开向导，确认之后才真正开始下载
+  const [wizardFor, setWizardFor] = useState<VersionSummary | null>(null)
 
   useEffect(() => {
     if (manifest === null && !loading) void onLoad(true)
@@ -670,20 +691,6 @@ function RemoteTab({
   }, [manifest, typeFilter, search])
 
   const visible = filtered.slice(0, limit)
-
-  const install = async (item: VersionSummary): Promise<void> => {
-    setInstalling(item.id)
-    try {
-      await mcal.installVersion(item.id)
-      toast.ok(`Minecraft ${item.id} 安装完成`, '现在可以创建实例开始游戏了')
-      onInstalled()
-    } catch (err) {
-      reportError(err, `安装 ${item.id} 失败`)
-      toast.info('下载源可能不可用', '试试切换到 BMCLAPI 镜像后重试，或检查网络代理设置')
-    } finally {
-      setInstalling(null)
-    }
-  }
 
   return (
     <div className="col gap-4">
@@ -713,14 +720,6 @@ function RemoteTab({
           </Button>
         </div>
       </div>
-
-      {installing && liveTask ? (
-        <LiveTask
-          task={liveTask}
-          label={`正在安装 Minecraft ${installing}`}
-          onCancel={() => void mcal.cancelTask(liveTask.taskId)}
-        />
-      ) : null}
 
       {loading && !manifest ? (
         <div className="col gap-2">
@@ -764,7 +763,6 @@ function RemoteTab({
         <div className="mcal-list stagger">
           {visible.map((item) => {
             const isInstalled = installedIds.has(item.id)
-            const isBusy = installing === item.id
             return (
               <div key={item.id} className="mcal-list__row">
                 <div className="col gap-1 grow" style={{ minWidth: 0 }}>
@@ -782,11 +780,9 @@ function RemoteTab({
                   size="sm"
                   variant={isInstalled ? 'default' : 'primary'}
                   icon={<IconDownload size={13} />}
-                  loading={isBusy}
-                  disabled={installing !== null && !isBusy}
-                  onClick={() => void install(item)}
+                  onClick={() => setWizardFor(item)}
                 >
-                  {isBusy ? '安装中…' : isInstalled ? '重新安装' : '安装'}
+                  {isInstalled ? '重新安装' : '安装'}
                 </Button>
               </div>
             )
@@ -801,7 +797,379 @@ function RemoteTab({
           </Button>
         </div>
       ) : null}
+
+      <InstallWizardModal
+        version={wizardFor}
+        defaultGameDir={defaultGameDir}
+        onClose={() => setWizardFor(null)}
+        onInstalled={onInstalled}
+      />
     </div>
+  )
+}
+
+/* ------------------------------ 安装向导 ------------------------------ */
+
+/**
+ * 开始下载之前一次性决定：基础版本、游戏目录、加载器、是否建实例。
+ * 进度面板按「打开向导之后创建的 install-version 任务」匹配 —— 任务 label 现在会带
+ * 加载器名（安装 Minecraft 1.21.1 + Fabric 0.16.5），不能再用 label 精确匹配。
+ */
+function InstallWizardModal({
+  version,
+  defaultGameDir,
+  onClose,
+  onInstalled
+}: {
+  version: VersionSummary | null
+  defaultGameDir: string
+  onClose: () => void
+  onInstalled: () => void
+}): React.JSX.Element | null {
+  const tasks = useTasks((state) => state.tasks)
+
+  const [loaderType, setLoaderType] = useState<LoaderType>('vanilla')
+  const [targetDir, setTargetDir] = useState('')
+  const [loaderVersions, setLoaderVersions] = useState<LoaderVersion[] | null>(null)
+  const [loadingVersions, setLoadingVersions] = useState(false)
+  const [versionsError, setVersionsError] = useState<string | null>(null)
+  // 空串 = 「最新（自动）」：不向 plan 传 loader.version，由主进程挑最新稳定版
+  const [loaderChoice, setLoaderChoice] = useState('')
+  const [reloadVersions, setReloadVersions] = useState(0)
+  const [createInstance, setCreateInstance] = useState(true)
+  const [nameDraft, setNameDraft] = useState('')
+  const [nameEdited, setNameEdited] = useState(false)
+  const [stage, setStage] = useState<'idle' | 'running' | 'done' | 'failed'>('idle')
+  // 只认打开向导之后创建的任务，避免展示到上一次安装的进度
+  const [openedAt, setOpenedAt] = useState<string | null>(null)
+  // 用户主动取消时 promise 也会 reject，要用 ref 区分「取消」和「真的失败」
+  const cancelRequested = useRef(false)
+
+  const gameVersion = version?.id ?? ''
+  const suggestedName = useMemo(
+    () => suggestInstanceName(gameVersion, loaderType, loaderChoice || undefined),
+    [gameVersion, loaderType, loaderChoice]
+  )
+  // 用户改过名字就一直用他的输入，没改过则跟随加载器选择
+  const instanceName = nameEdited ? nameDraft : suggestedName
+
+  useEffect(() => {
+    if (!version) return
+    setLoaderType('vanilla')
+    setTargetDir(defaultGameDir)
+    setLoaderVersions(null)
+    setVersionsError(null)
+    setLoaderChoice('')
+    setCreateInstance(true)
+    setNameEdited(false)
+    setStage('idle')
+    setOpenedAt(new Date().toISOString())
+    cancelRequested.current = false
+  }, [version, defaultGameDir])
+
+  useEffect(() => {
+    if (!version || loaderType === 'vanilla') return
+    let cancelled = false
+    setLoadingVersions(true)
+    setVersionsError(null)
+    setLoaderVersions(null)
+    setLoaderChoice('')
+    mcal
+      .listLoaderVersions({ loaderType, gameVersion: version.id })
+      .then((list) => {
+        if (cancelled) return
+        setLoaderVersions(list)
+        // 与主进程「自动」时的挑选规则一致：第一个稳定版优先
+        setLoaderChoice((list.find((item) => item.stable) ?? list[0])?.version ?? '')
+        if (list.length === 0) toast.info('没有查到可用版本', `${loaderLabel(loaderType)} 可能还不支持 ${version.id}`)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setVersionsError(err instanceof Error ? err.message : String(err))
+        toast.info('加载器版本获取失败，已改为「最新（自动）」', '安装时由启动器挑稳定版；也可以切换顶部下载源到 BMCLAPI 后重试')
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingVersions(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [version, loaderType, reloadVersions])
+
+  const liveTask = useMemo(() => {
+    if (!openedAt) return undefined
+    const since = Date.parse(openedAt)
+    return tasks
+      .filter((task) => task.kind === 'install-version' && Date.parse(task.startedAt) >= since)
+      .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))[0]
+  }, [tasks, openedAt])
+
+  if (!version) return null
+
+  const locked = stage === 'running'
+
+  const cancelInstall = (): void => {
+    if (!liveTask) return
+    cancelRequested.current = true
+    void mcal.cancelTask(liveTask.taskId)
+  }
+
+  // 安装期间不允许直接关闭：进度面板就在弹窗里，关掉容易让人以为下载已停止
+  const requestClose = (): void => {
+    if (locked) {
+      toast.info('安装正在进行', '可以点「取消安装」中止，或等安装结束后再关闭')
+      return
+    }
+    onClose()
+  }
+
+  const pickDir = async (): Promise<void> => {
+    try {
+      const dir = await mcal.pickDir({ title: '选择安装目录', defaultPath: targetDir || defaultGameDir })
+      if (dir) setTargetDir(dir)
+    } catch (err) {
+      reportError(err, '选择目录失败')
+    }
+  }
+
+  const start = async (): Promise<void> => {
+    const plan: VersionInstallPlan = {
+      gameVersion,
+      gameDir: targetDir.trim() || undefined,
+      loader: loaderType === 'vanilla' ? null : { type: loaderType, version: loaderChoice || undefined },
+      createInstance,
+      instanceName: createInstance ? instanceName.trim() || undefined : undefined
+    }
+    setStage('running')
+    try {
+      const result = await mcal.installVersionPlan(plan)
+      const label = instanceName.trim() || suggestedName
+      toast.ok(
+        `Minecraft ${result.gameVersion} 安装完成`,
+        result.instanceId
+          ? `实例「${label}」已就绪，可以到实例页调整内存与 Java 后开玩`
+          : '版本已就绪，可以创建实例开始游戏了'
+      )
+      for (const warning of result.warnings.slice(0, 2)) toast.warn('安装提示', warning)
+      setStage('done')
+      onInstalled()
+    } catch (err) {
+      if (cancelRequested.current) {
+        toast.info('安装已取消', '已下载的文件会保留，下次安装会直接跳过')
+      } else {
+        reportError(err, `安装 ${gameVersion} 失败`)
+        toast.info('下载源可能不可用', '试试切换到 BMCLAPI 镜像后重试，或检查网络代理设置')
+      }
+      setStage('failed')
+    }
+  }
+
+  return (
+    <Modal
+      open={version !== null}
+      onClose={requestClose}
+      wide
+      title={`安装 Minecraft ${gameVersion}`}
+      footer={
+        locked ? (
+          <>
+            <Button variant="ghost" onClick={cancelInstall} disabled={!liveTask}>
+              取消安装
+            </Button>
+            <Button variant="primary" loading>
+              安装中…
+            </Button>
+          </>
+        ) : stage === 'done' ? (
+          <Button variant="primary" icon={<IconCheck size={14} />} onClick={onClose}>
+            完成
+          </Button>
+        ) : (
+          <>
+            <Button variant="ghost" onClick={requestClose}>
+              取消
+            </Button>
+            <Button variant="primary" icon={<IconDownload size={14} />} onClick={() => void start()}>
+              {stage === 'failed' ? '重试安装' : '开始安装'}
+            </Button>
+          </>
+        )
+      }
+    >
+      <div className="col gap-4">
+        <div className="mcal-panel col gap-2" style={{ padding: 12 }}>
+          <div className="row-between gap-3 fs-sm">
+            <span className="muted">基础版本</span>
+            <span className="row gap-2">
+              <span className="mono bold">{gameVersion}</span>
+              <Badge tone={typeTone(version.type)}>{typeLabel(version.type)}</Badge>
+            </span>
+          </div>
+          <div className="fs-xs muted">
+            按顺序完成：下载原版 {gameVersion} → 安装加载器（如果选了）→ 创建实例（如果开了）。中途失败会停在失败的那一步，重试不会重复下载已完成的文件。
+          </div>
+        </div>
+
+        <Card flat padding={12}>
+          <div className="row-start gap-2 fs-xs warn">
+            <IconAlert size={13} className="warn" style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>安装是长任务，安装期间请不要关闭启动器；中断后重新安装即可，已下载的文件会跳过。</span>
+          </div>
+        </Card>
+
+        {stage !== 'idle' && liveTask ? (
+          <LiveTask task={liveTask} label={liveTask.label} onCancel={cancelInstall} />
+        ) : null}
+        {stage === 'running' && !liveTask ? <div className="fs-xs muted">正在创建安装任务…</div> : null}
+
+        <Field label="游戏目录" hint="版本与实例都会装到这里；默认用设置里的游戏目录，可以点「选择」换一个">
+          <div className="row gap-2">
+            <div className="grow">
+              <Input
+                value={targetDir}
+                onChange={setTargetDir}
+                disabled={locked}
+                monospace
+                placeholder={defaultGameDir || '默认游戏目录'}
+              />
+            </div>
+            <Button icon={<IconFolder size={14} />} disabled={locked} onClick={() => void pickDir()}>
+              选择
+            </Button>
+          </div>
+        </Field>
+
+        <Field label="加载器" hint="玩模组要先装加载器；不确定就选「仅原版」，之后还能在「加载器」标签页补装">
+          <div className="row gap-2 wrap">
+            {WIZARD_LOADER_CHOICES.map((choice) => (
+              <Chip
+                key={choice.value}
+                active={loaderType === choice.value}
+                onClick={() => {
+                  if (locked) return
+                  setLoaderType(choice.value)
+                }}
+              >
+                {choice.label}
+                {choice.recommended ? <Badge tone="ok">推荐新玩家</Badge> : null}
+              </Chip>
+            ))}
+          </div>
+        </Field>
+
+        {loaderType !== 'vanilla' ? (
+          <div className="col gap-2">
+            <div className="row-between gap-2 wrap">
+              <span className="fs-sm">
+                {loaderLabel(loaderType)} 版本
+                {loadingVersions
+                  ? ' · 正在获取…'
+                  : loaderVersions && loaderVersions.length > 0
+                    ? ` · 共 ${loaderVersions.length} 个`
+                    : ''}
+              </span>
+              {versionsError ? (
+                <Button
+                  size="sm"
+                  icon={<IconRefresh size={13} />}
+                  disabled={locked}
+                  onClick={() => setReloadVersions((value) => value + 1)}
+                >
+                  重试
+                </Button>
+              ) : null}
+            </div>
+
+            {loadingVersions ? (
+              <div className="col gap-2">
+                {[0, 1, 2].map((index) => (
+                  <div key={index} className="skeleton" style={{ height: 44 }} />
+                ))}
+              </div>
+            ) : (
+              <div className="mcal-list" style={{ maxHeight: 216, overflowY: 'auto' }}>
+                <div
+                  className="mcal-list__row"
+                  style={
+                    loaderChoice === ''
+                      ? { borderColor: 'var(--c-verdant)', background: 'var(--c-verdant-glow)' }
+                      : undefined
+                  }
+                  onClick={() => {
+                    if (!locked) setLoaderChoice('')
+                  }}
+                >
+                  <div className="col gap-1 grow" style={{ minWidth: 0 }}>
+                    <div className="row gap-2">
+                      <span className="bold">最新（自动）</span>
+                      {loaderChoice === '' ? <Badge tone="info">已选中</Badge> : null}
+                    </div>
+                    <div className="fs-xs muted">安装时由启动器挑最新的稳定版</div>
+                  </div>
+                </div>
+                {(loaderVersions ?? []).map((item) => (
+                  <div
+                    key={item.version}
+                    className="mcal-list__row"
+                    style={
+                      loaderChoice === item.version
+                        ? { borderColor: 'var(--c-verdant)', background: 'var(--c-verdant-glow)' }
+                        : undefined
+                    }
+                    onClick={() => {
+                      if (!locked) setLoaderChoice(item.version)
+                    }}
+                  >
+                    <div className="col gap-1 grow" style={{ minWidth: 0 }}>
+                      <div className="row gap-2 wrap">
+                        <span className="mono bold">{item.version}</span>
+                        {item.stable ? <Badge tone="ok">稳定版</Badge> : <Badge tone="warn">测试版</Badge>}
+                        {item.label ? <Badge tone={item.label === 'recommended' ? 'ok' : 'info'}>{item.label}</Badge> : null}
+                        {loaderChoice === item.version ? <Badge tone="info">已选中</Badge> : null}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {versionsError ? (
+              <div className="fs-xs err break-all">
+                获取失败：{versionsError}。已自动改用「最新（自动）」，安装依然可以进行。
+              </div>
+            ) : null}
+            {!loadingVersions && !versionsError && loaderVersions !== null && loaderVersions.length === 0 ? (
+              <div className="fs-xs warn">
+                {loaderLabel(loaderType)} 看起来还不支持 {gameVersion}，可以换个加载器；也可以试试「最新（自动）」。
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="row-between gap-3 wrap">
+          <div className="col gap-1">
+            <span className="fs-sm">安装完成后创建实例</span>
+            <span className="fs-xs muted">实例决定内存、Java 与 mods 目录；不创建的话之后可以在「已安装」里手动建</span>
+          </div>
+          <Switch checked={createInstance} disabled={locked} label="安装完成后创建实例" onChange={setCreateInstance} />
+        </div>
+
+        {createInstance ? (
+          <Field label="实例名称" hint="会显示在实例列表里，之后可以随时改名">
+            <Input
+              value={instanceName}
+              disabled={locked}
+              onChange={(value) => {
+                setNameDraft(value)
+                setNameEdited(true)
+              }}
+              onEnter={() => void start()}
+              placeholder={suggestedName}
+            />
+          </Field>
+        ) : null}
+      </div>
+    </Modal>
   )
 }
 

@@ -8,6 +8,7 @@
 import { app, BrowserWindow, nativeTheme, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import type { AgentEvent, PermissionRequest, PermissionResponse } from '@shared/types'
 import { logger } from '@core/util/logger'
@@ -16,10 +17,12 @@ import { ServiceContainer } from './container'
 import { LauncherApi } from './launcher-api'
 import { registerIpc } from './ipc'
 import { registerPendingPermission, rejectAllPending } from './permissions'
+import { UpdateService } from './update'
 import { APP_NAME, WINDOW_MIN_HEIGHT, WINDOW_MIN_WIDTH } from './store/defaults'
 
 let mainWindow: BrowserWindow | null = null
 let container: ServiceContainer | null = null
+let updateService: UpdateService | null = null
 let disposeIpc: (() => void) | null = null
 
 /** 判定资源目录：dev 下是项目根，打包后在 asar 内 */
@@ -74,7 +77,8 @@ function createWindow(): BrowserWindow {
   window.webContents.on('will-navigate', (event, url) => {
     const devServer = process.env.ELECTRON_RENDERER_URL
     if (devServer && url.startsWith(devServer)) return
-    if (url.startsWith('file://')) return
+    // 只放行应用自己的渲染页面：file:// 整站放行等于让任意本地 HTML 接管这个窗口
+    if (url.startsWith(pathToFileURL(join(__dirname, '../renderer')).href)) return
     event.preventDefault()
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url)
   })
@@ -132,11 +136,23 @@ async function bootstrap(): Promise<void> {
 
   mainWindow = createWindow()
 
+  updateService = new UpdateService({
+    getVersion: () => app.getVersion(),
+    getSettings: () => ({ update: container!.settings.get().update }),
+    getWindow: () => mainWindow,
+    emit: (event) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update:event', event)
+      }
+    }
+  })
+
   disposeIpc = registerIpc({
     container,
     api,
     getWindow: () => mainWindow,
     emitAgentEvent: (sessionId, event) => container!.emitAgentEvent(sessionId, event),
+    updateService,
     onQuit: () => app.quit()
   })
 
@@ -146,6 +162,24 @@ async function bootstrap(): Promise<void> {
       mainWindow.webContents.send('task:event', task)
     }
   })
+
+  // 启动后自动检查更新：等窗口先画出来，失败也只是后台一条日志
+  if (container.settings.get().update.autoCheck) {
+    setTimeout(() => {
+      void updateService
+        ?.check()
+        .then((result) => {
+          // 记录检查时间，让设置页的「上次检查」在自动检查后也是准的
+          container!.settings.update({ update: { lastCheckAt: result.checkedAt } })
+          void container!.settings.flush().catch(() => undefined)
+          // 检查成功就把结果推给界面（无论有没有新版本）：「关于」页靠它同步「上次检查」时间
+          if (result.ok) {
+            mainWindow?.webContents.send('update:event', { type: 'available', result })
+          }
+        })
+        .catch((err: unknown) => logger.debug('main', `启动检查更新失败：${String(err)}`))
+    }, 3000)
+  }
 }
 
 app.whenReady().then(async () => {

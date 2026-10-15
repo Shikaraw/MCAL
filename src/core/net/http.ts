@@ -4,9 +4,11 @@
  */
 
 import { createWriteStream } from 'node:fs'
-import { mkdir, open, rename, rm, stat } from 'node:fs/promises'
+import { mkdir, rename, rm, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { Readable, Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { withRetry } from '@core/util/misc'
 import { logger } from '@core/util/logger'
 
@@ -37,6 +39,14 @@ export class HttpError extends Error {
   ) {
     super(message)
     this.name = 'HttpError'
+  }
+}
+
+/** 下载完成但内容校验不通过：调用方靠它区分“网络失败”与“拿到坏文件” */
+export class VerifyError extends Error {
+  constructor(readonly url: string) {
+    super(`校验未通过：${url}`)
+    this.name = 'VerifyError'
   }
 }
 
@@ -191,8 +201,13 @@ export class HttpClient {
   /**
    * 下载文件到目标路径。
    * - 支持断点续传（存在 .part 文件且服务器支持 Range）
-   * - 支持限速
+   * - 支持限速与校验回调（校验不通过时交由上层换源重试）
    * - 先写 .part，完成后 rename，避免半成品被当成完整文件
+   *
+   * 注意：写入用的 fd 只能有一个主人。这里统一交给 pipeline 创建并关闭流，
+   * 不要自己 open() 出 fd 再喂给 createWriteStream —— 那样流关闭后 FileHandle
+   * 还会在 GC 时再关一次，fd 号可能已被别的并发下载复用，轻则报 EBADF，
+   * 重则写坏另一路下载的文件。
    */
   async downloadToFile(
     url: string,
@@ -204,19 +219,27 @@ export class HttpClient {
       timeoutMs?: number
       retries?: number
       headers?: Record<string, string>
+      /** 已知的目标文件大小，用于判断 416 是“已下完”还是“.part 比目标还大” */
+      expectedSize?: number
+      /** 下载完成后校验；返回 false 视为本次失败，可让上层换下一个地址 */
+      verify?: () => Promise<boolean>
     } = {}
   ): Promise<{ bytes: number; resumed: boolean }> {
     const resume = options.resume ?? true
     const partPath = `${dest}.part`
     await mkdir(dirname(dest), { recursive: true })
 
+    const partSize = async (): Promise<number> => {
+      try {
+        return (await stat(partPath)).size
+      } catch {
+        return 0
+      }
+    }
+
     let startAt = 0
     if (resume) {
-      try {
-        startAt = (await stat(partPath)).size
-      } catch {
-        startAt = 0
-      }
+      startAt = await partSize()
     } else {
       await rm(partPath, { force: true }).catch(() => undefined)
       startAt = 0
@@ -234,10 +257,15 @@ export class HttpClient {
       })
 
       if (response.status === 416 && effectiveStart > 0) {
-        // 已下载完（服务端认为超出范围），直接进入校验阶段
-        await rename(partPath, dest).catch(() => undefined)
-        const info = await stat(dest).catch(() => ({ size: 0 }))
-        return { bytes: Number(info.size), resumed: true }
+        // 服务端认为请求越界。只有在 .part 与目标大小一致时才能当成“已下载完”，
+        // 否则说明 .part 比真文件还大（上一次写入被打断/写坏），必须丢掉重下。
+        const current = await partSize()
+        if (options.expectedSize && current === options.expectedSize) {
+          await rename(partPath, dest)
+          return { bytes: current, resumed: true }
+        }
+        await rm(partPath, { force: true }).catch(() => undefined)
+        throw new Error(`分段请求越界（.part ${current} 字节），将从零重下：${url}`)
       }
       if (!response.ok) {
         throw new HttpError(`下载失败 HTTP ${response.status} <- ${url}`, response.status, url)
@@ -256,45 +284,44 @@ export class HttpClient {
       const total = contentLength > 0 ? contentLength + effectiveStart : 0
       let received = effectiveStart
 
-      if (!response.body) {
-        const buffer = Buffer.from(await response.arrayBuffer())
-        await this.limiter.acquire(buffer.length, options.signal)
-        const handle = await open(partPath, effectiveStart > 0 ? 'r+' : 'w')
-        try {
-          await handle.write(buffer, 0, buffer.length, effectiveStart)
-        } finally {
-          await handle.close()
-        }
-        received += buffer.length
-        options.onProgress?.(buffer.length, received, total)
-      } else {
-        const handle = await open(partPath, effectiveStart > 0 ? 'r+' : 'w')
-        const writeStream = createWriteStream(partPath, { fd: handle.fd, start: effectiveStart, autoClose: true })
-        try {
-          // Node 18+ 的 ReadableStream 支持异步迭代
-          for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-            const buf = Buffer.from(chunk)
-            await this.limiter.acquire(buf.length, options.signal)
-            received += buf.length
-            options.onProgress?.(buf.length, received, total)
-            if (!writeStream.write(buf)) {
-              await new Promise<void>((resolve, reject) => {
-                writeStream.once('drain', resolve)
-                writeStream.once('error', reject)
-              })
+      const source = response.body
+        ? Readable.from(response.body as unknown as AsyncIterable<Uint8Array>)
+        : Readable.from([Buffer.from(await response.arrayBuffer())])
+      // 计速与限速放在 Transform 里，pipeline 负责关闭所有流并传递错误
+      const meter = new Transform({
+        transform: (chunk: Buffer, _enc, callback): void => {
+          void (async () => {
+            try {
+              await this.limiter.acquire(chunk.length, options.signal)
+              received += chunk.length
+              options.onProgress?.(chunk.length, received, total)
+              callback(null, chunk)
+            } catch (err) {
+              callback(err as Error)
             }
-          }
-          await new Promise<void>((resolve, reject) => {
-            writeStream.end(() => resolve())
-            writeStream.once('error', reject)
-          })
-        } catch (err) {
-          writeStream.destroy()
-          throw err
+          })()
         }
+      })
+
+      await pipeline(source, meter, createWriteStream(partPath, {
+        flags: effectiveStart > 0 ? 'r+' : 'w',
+        start: effectiveStart
+      }))
+
+      // 服务端提前断流时 content-length 会对不上，别把残缺文件当成成品
+      if (total > 0 && received !== total) {
+        await rm(partPath, { force: true }).catch(() => undefined)
+        throw new Error(`下载不完整：期望 ${total} 字节，实际 ${received} 字节 <- ${url}`)
       }
 
+      // 先落位再校验：校验回调看的是最终路径
       await rename(partPath, dest)
+
+      if (options.verify && !(await options.verify())) {
+        await rm(dest, { force: true }).catch(() => undefined)
+        throw new VerifyError(url)
+      }
+
       return { bytes: received, resumed }
     }
 

@@ -69,8 +69,8 @@ interface SessionRuntime {
   /** 串行化同一会话的请求 */
   queue: Promise<void>
   todos: { id: string; content: string; status: string; note?: string }[]
-  /** 会话级权限记忆：toolName → 已授权 */
-  sessionAllows: Set<string>
+  /** 会话级权限记忆：toolName（或 `always:toolName`）→ 授权到期时间戳 */
+  sessionAllows: Map<string, number>
   /** 本次 run 的待授权请求 */
   pendingPermissions: Map<string, (response: PermissionResponse) => void>
 }
@@ -440,9 +440,14 @@ export class AgentHarness {
         return
       }
 
-      // 权限判定
+      // 权限判定（访问级别 + 权限模式共同决定）
       const mode = this.effectivePermissionMode(settings, runtime, call.name)
-      const verdict = this.deps.registry.resolvePermission(call.name, args, mode)
+      const roots = this.deps.getRoots()
+      const verdict = this.deps.registry.resolvePermission(call.name, args, mode, {
+        mode: settings.agent.accessMode ?? 'workspace',
+        roots,
+        confirmSensitive: settings.agent.confirmSensitive !== false
+      })
       if (verdict.denied) {
         results.set(call.id, { ok: false, output: verdict.denied })
         this.deps.emit(sessionId, { type: 'tool_result', callId: call.id, name: call.name, ok: false, output: verdict.denied })
@@ -451,6 +456,8 @@ export class AgentHarness {
       if (verdict.spec) {
         const requestId = `perm_${randomUUID().slice(0, 10)}`
         const request = this.deps.registry.buildPermissionRequest(call.id, call.name, verdict.spec, requestId)
+        // 让弹窗能显示「允许 X 分钟内不再询问」
+        request.rememberMs = settings.agent.grantRememberMs ?? 0
         this.deps.emit(sessionId, { type: 'permission_request', request })
         const response = await new Promise<PermissionResponse>((resolve) => {
           runtime.pendingPermissions.set(requestId, resolve)
@@ -472,13 +479,14 @@ export class AgentHarness {
           this.deps.emit(sessionId, { type: 'tool_result', callId: call.id, name: call.name, ok: false, output })
           return
         }
-        if (response.scope === 'session') runtime.sessionAllows.add(call.name)
-        if (response.scope === 'always') runtime.sessionAllows.add(`always:${call.name}`)
+        if (response.scope === 'session') this.rememberGrant(runtime, call.name, settings.agent.grantRememberMs)
+        if (response.scope === 'always') runtime.sessionAllows.set(`always:${call.name}`, Number.POSITIVE_INFINITY)
       }
 
       const context: ToolInvocationContext = {
         sessionId,
-        roots: this.deps.getRoots(),
+        roots,
+        accessMode: settings.agent.accessMode ?? 'workspace',
         requestPermission: async (req) => {
           const requestId = `perm_${randomUUID().slice(0, 10)}`
           this.deps.emit(sessionId, { type: 'permission_request', request: { ...req, id: requestId } })
@@ -526,12 +534,28 @@ export class AgentHarness {
     toolName: string
   ): 'ask' | 'auto-safe' | 'auto-all' | 'readonly' {
     const mode = settings.agent.permissionMode ?? 'ask'
-    if (runtime.sessionAllows.has(`always:${toolName}`) && mode !== 'readonly') return 'auto-all'
-    if (runtime.sessionAllows.has(toolName) && mode !== 'readonly') {
-      // 会话级授权：只对当前工具放开，其它工具仍按原策略
-      return 'auto-all'
-    }
+    if (mode === 'readonly') return mode
+    if (this.hasGrant(runtime, `always:${toolName}`)) return 'auto-all'
+    // 会话级授权：只对当前工具放开，其它工具仍按原策略；到期后重新询问
+    if (this.hasGrant(runtime, toolName)) return 'auto-all'
     return mode
+  }
+
+  /** 记住一次授权（grantRememberMs 为 0 时不记） */
+  private rememberGrant(runtime: SessionRuntime, toolName: string, rememberMs?: number): void {
+    const ttl = rememberMs ?? 0
+    if (ttl <= 0) return
+    runtime.sessionAllows.set(toolName, Date.now() + ttl)
+  }
+
+  private hasGrant(runtime: SessionRuntime, key: string): boolean {
+    const expiresAt = runtime.sessionAllows.get(key)
+    if (expiresAt === undefined) return false
+    if (expiresAt <= Date.now()) {
+      runtime.sessionAllows.delete(key)
+      return false
+    }
+    return true
   }
 
   /* ------------------------- 辅助 ------------------------- */
@@ -544,7 +568,7 @@ export class AgentHarness {
         running: false,
         queue: Promise.resolve(),
         todos: [],
-        sessionAllows: new Set(),
+        sessionAllows: new Map(),
         pendingPermissions: new Map()
       }
       this.runtime.set(sessionId, runtime)

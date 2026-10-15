@@ -8,6 +8,7 @@
  */
 
 import type { PermissionRequest, ToolDefinition, ToolInvocationContext } from '@shared/types'
+import { isAbsolute, resolve } from 'node:path'
 import { logger } from '@core/util/logger'
 
 const log = logger.scoped('tools')
@@ -28,6 +29,69 @@ export interface PermissionSpec {
   summary: string
   detail?: string
   risk: 'low' | 'medium' | 'high'
+}
+
+/** 访问级别的执行上下文：决定「工作区」这条边界画在哪里 */
+export interface ToolAccessPolicy {
+  mode: 'workspace' | 'full'
+  roots: string[]
+  /** 敏感操作是否强制授权（即使处于 full + auto-all） */
+  confirmSensitive: boolean
+}
+
+/** 参数里可能承载路径的键名：只在这些键上做越界判断，避免把正文误当路径 */
+const PATH_ARG_KEYS = new Set([
+  'path',
+  'paths',
+  'file',
+  'files',
+  'target',
+  'targets',
+  'dest',
+  'destination',
+  'source',
+  'src',
+  'dir',
+  'directory',
+  'folder',
+  'root',
+  'cwd',
+  'workdir',
+  'input',
+  'output',
+  'outdir',
+  'from',
+  'to',
+  'save',
+  'savepath'
+])
+
+function normalizeForCompare(input: string): string {
+  return resolve(input).replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '')
+}
+
+/** 取出参数中像路径的值（只看已知键名，支持字符串与字符串数组） */
+export function collectPathArgs(args: Record<string, unknown>): string[] {
+  const out: string[] = []
+  for (const [key, value] of Object.entries(args)) {
+    if (!PATH_ARG_KEYS.has(key.toLowerCase())) continue
+    if (typeof value === 'string' && value.trim() !== '') out.push(value)
+    else if (Array.isArray(value)) {
+      for (const item of value) if (typeof item === 'string' && item.trim() !== '') out.push(item)
+    }
+  }
+  return out
+}
+
+/** 目标是否在工作区之外；相对路径按 roots[0] 解析，与 fs 工具保持一致 */
+export function isOutsideWorkspace(target: string, roots: string[]): boolean {
+  if (roots.length === 0) return false
+  const absolute = isAbsolute(target) ? resolve(target) : resolve(roots[0], target)
+  const normalized = normalizeForCompare(absolute)
+  return !roots.some((root) => {
+    const rootNorm = normalizeForCompare(root)
+    return normalized === rootNorm || normalized.startsWith(`${rootNorm}/`)
+  })
 }
 
 export interface ToolDefinitionWithHandler extends ToolDefinition {
@@ -71,7 +135,8 @@ export class ToolRegistry {
       category: tool.category,
       readOnly: tool.readOnly,
       dangerous: tool.dangerous,
-      requiresPaths: tool.requiresPaths
+      requiresPaths: tool.requiresPaths,
+      escapesWorkspace: tool.escapesWorkspace
     }))
   }
 
@@ -80,41 +145,102 @@ export class ToolRegistry {
   }
 
   /**
-   * 判断某次调用是否需要用户确认。
-   * 策略：
-   * - permissionMode 'readonly'：只有只读工具放行，其余一律拒绝（返回 denied）。
-   * - 'auto-all'：不询问。
-   * - 'auto-safe'：只读工具 + 低风险写操作（写入 agent 工作区内的新文件）不询问。
-   * - 'ask'：所有写/命令操作都询问。
+   * 判断某次调用是否需要用户确认，或应当直接拒绝。
+   *
+   * 两层策略叠加：
+   * 1) 访问级别（access.mode）：workspace = 只允许工作区内的路径，越界直接拒绝；
+   *    full = 允许任意路径，但越界写操作一律弹授权。
+   * 2) 权限模式（mode）：readonly 只读 / auto-safe 低风险自动 / auto-all 全自动 / ask 每次问。
+   *
+   * 敏感操作（删除、执行命令、工作区外写入）在 access.confirmSensitive 开启时
+   * 永远需要授权，即使处于 full + auto-all。
    */
   resolvePermission(
     name: string,
     args: Record<string, unknown>,
-    mode: 'ask' | 'auto-safe' | 'auto-all' | 'readonly'
+    mode: 'ask' | 'auto-safe' | 'auto-all' | 'readonly',
+    access?: ToolAccessPolicy
   ): { spec: PermissionSpec | null; denied?: string } {
     const tool = this.tools.get(name)
     if (!tool) return { spec: null, denied: `未知工具：${name}` }
     const readOnly = tool.readOnly === true
+    const policy: ToolAccessPolicy = access ?? { mode: 'workspace', roots: [], confirmSensitive: true }
 
-    if (mode === 'readonly' && !readOnly) {
+    if (mode === 'readonly') {
+      if (readOnly) return { spec: null }
       return { spec: null, denied: `当前为「只读模式」，不允许执行 ${name}。如需执行请在设置中调整 Agent 权限模式。` }
     }
-    if (mode === 'auto-all') return { spec: null }
+
+    // 能绕过工作区边界的工具（如 shell）在「仅工作区」下不执行：无法既保证沙箱又放行命令
+    if (policy.mode === 'workspace' && tool.escapesWorkspace) {
+      return {
+        spec: null,
+        denied:
+          `当前访问级别为「仅工作区」，${name} 可以执行任意命令、绕过该限制，因此被阻止。\n` +
+          '请把需要执行的命令直接告诉用户，由用户自行运行；' +
+          '或者由用户在「设置 → AI 模型 → 访问权限」中改为「完全访问」后重试。'
+      }
+    }
+
+    const outsidePaths =
+      tool.requiresPaths === true
+        ? collectPathArgs(args).filter((target) => isOutsideWorkspace(target, policy.roots))
+        : []
+
+    if (policy.mode === 'workspace' && outsidePaths.length > 0) {
+      return {
+        spec: null,
+        denied:
+          `以下路径不在允许范围内：\n${outsidePaths.map((p) => `  - ${p}`).join('\n')}\n` +
+          `当前允许的根目录：\n${policy.roots.map((r) => `  - ${r}`).join('\n') || '  （无）'}\n` +
+          '当前访问级别为「仅工作区」。如需读取/修改其它位置，请让用户在「设置 → AI 模型 → 访问权限」中改为「完全访问」。'
+      }
+    }
+
+    const outsideWrite = policy.mode === 'full' && !readOnly && outsidePaths.length > 0
+    const sensitive = !readOnly && (tool.dangerous === true || tool.escapesWorkspace === true)
+    const mustConfirm = policy.confirmSensitive && (sensitive || outsideWrite)
+    const sensitiveNote = outsideWrite && sensitive
+      ? `操作对象在工作区之外：\n${outsidePaths.map((p) => `  - ${p}`).join('\n')}`
+      : outsideWrite
+        ? `工作区之外的写入：\n${outsidePaths.map((p) => `  - ${p}`).join('\n')}`
+        : undefined
+
+    if (mode === 'auto-all') {
+      if (!mustConfirm) return { spec: null }
+      return {
+        spec: {
+          summary: `敏感操作：执行 ${name}`,
+          detail: [summarizeArgs(args), sensitiveNote].filter(Boolean).join('\n'),
+          risk: 'high'
+        }
+      }
+    }
 
     const explicit = tool.permissionFor?.(args) ?? null
     if (explicit) {
-      if (mode === 'auto-safe' && explicit.risk === 'low' && !tool.dangerous) return { spec: null }
-      return { spec: explicit }
+      if (!mustConfirm) {
+        if (mode === 'auto-safe' && explicit.risk === 'low' && !tool.dangerous) return { spec: null }
+        return { spec: explicit }
+      }
+      // 敏感操作：保留工具自己写好的说明，但把风险级别抬高并附带越界信息
+      return {
+        spec: {
+          summary: explicit.summary,
+          detail: [explicit.detail, sensitiveNote].filter(Boolean).join('\n') || summarizeArgs(args),
+          risk: outsideWrite || sensitive ? 'high' : explicit.risk
+        }
+      }
     }
     if (readOnly) return { spec: null }
-    if (mode === 'auto-safe' && !tool.dangerous) return { spec: null }
-    if (!tool.dangerous && tool.category === 'knowledge') return { spec: null }
+    if (!mustConfirm && mode === 'auto-safe' && !tool.dangerous && !tool.escapesWorkspace) return { spec: null }
+    if (!mustConfirm && !tool.dangerous && tool.category === 'knowledge') return { spec: null }
 
     return {
       spec: {
         summary: `执行 ${name}`,
-        detail: summarizeArgs(args),
-        risk: tool.dangerous ? 'high' : 'medium'
+        detail: [summarizeArgs(args), sensitiveNote].filter(Boolean).join('\n'),
+        risk: mustConfirm || tool.dangerous ? 'high' : 'medium'
       }
     }
   }

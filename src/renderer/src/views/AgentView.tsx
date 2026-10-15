@@ -2068,6 +2068,11 @@ function PermissionDialog({
 
   const canSession = (request.scopes?.length ?? 0) === 0 || request.scopes.includes('session')
   const canAlways = request.scopes?.includes('always') ?? false
+  const rememberMs = request.rememberMs ?? 0
+  const canRemember = canSession && rememberMs > 0
+  const rememberLabel = rememberMs >= 60 * 60 * 1000 && rememberMs % (60 * 60 * 1000) === 0
+    ? `${rememberMs / (60 * 60 * 1000)} 小时`
+    : `${Math.max(1, Math.round(rememberMs / 60000))} 分钟`
 
   const allowOnce = (): void => {
     if (request.risk === 'high' && !armed) {
@@ -2101,7 +2106,12 @@ function PermissionDialog({
             </Button>
           ) : null}
           {canSession ? (
-            <Button onClick={() => onRespond(request, 'allow', 'session')}>本次会话允许</Button>
+            <Button
+              onClick={() => onRespond(request, 'allow', 'session')}
+              title={canRemember ? `在「设置 → AI 模型 → 授权记忆时长」中可调整记忆时间` : '当前设置为不记住授权，仅对本次调用有效'}
+            >
+              {canRemember ? `${rememberLabel}内不再询问` : '本次会话允许'}
+            </Button>
           ) : null}
           <Button variant={request.risk === 'high' ? 'danger' : 'primary'} onClick={allowOnce}>
             {request.risk === 'high' && !armed ? '仅本次允许（高风险）' : armed ? '再次点击确认执行' : '仅本次允许'}

@@ -1,11 +1,12 @@
 /** 应用外壳：动态背景、侧边栏导航、主内容区、通知层。 */
 
 import type { ReactNode } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   IconBook,
   IconBox,
   IconBrain,
+  IconClose,
   IconCode,
   IconCoffee,
   IconCube,
@@ -17,7 +18,8 @@ import {
   IconSparkles,
   IconTerminal
 } from '../ui/icons'
-import { Tooltip } from '../ui/primitives'
+import { Button, Tooltip } from '../ui/primitives'
+import { mcal } from '../../lib/api'
 import { useInstances, useSettings, useSystem, useTasks, useToasts, useView, type ViewId } from '../../state/store'
 import { loaderLabel } from '../../lib/format'
 
@@ -260,6 +262,74 @@ export function Toasts(): React.JSX.Element {
   )
 }
 
+/* ------------------------------- 更新提示条 ------------------------------- */
+
+/**
+ * 发现新版本时的提示条（内容区顶部，普通文档流，不遮挡页面按钮）。
+ *
+ * 数据来自主进程启动后的静默检查：命中新版本时会推 { type: 'available' }。
+ * 正在下载（收到过 progress 事件）就不提示，避免和下载进度互相干扰；
+ * 点「关闭」后本次会话不再显示。
+ */
+export function UpdateBanner(): React.JSX.Element | null {
+  const navigate = useView((state) => state.navigate)
+  const [version, setVersion] = useState<string | null>(null)
+  const [dismissed, setDismissed] = useState(false)
+  const downloading = useRef(false)
+
+  useEffect(() => {
+    const off = mcal.onUpdateEvent((event) => {
+      if (event.type === 'progress') {
+        downloading.current = true
+        return
+      }
+      // 下载结束或失败都要复位，否则以后的「发现新版本」提示会被一直忽略
+      if (event.type === 'done' || event.type === 'failed') {
+        downloading.current = false
+        return
+      }
+      if (downloading.current || !event.result.hasUpdate || !event.result.latestVersion) return
+      setVersion(event.result.latestVersion)
+    })
+    return off
+  }, [])
+
+  if (!version || dismissed) return null
+
+  return (
+    <div
+      className="row gap-3 wrap anim-rise"
+      style={{
+        padding: '6px 20px',
+        borderBottom: '1px solid var(--c-hairline)',
+        background: 'linear-gradient(90deg, rgba(61, 220, 132, 0.16) 0%, rgba(79, 214, 232, 0.08) 55%, transparent 100%)',
+        flexShrink: 0
+      }}
+    >
+      <span className="row gap-2">
+        <IconSparkles size={13} className="accent" />
+        <span className="fs-sm">
+          发现新版本 <span className="mono bold">v{version}</span>
+        </span>
+      </span>
+      <span className="fs-xs muted">可以先看更新说明，再决定要不要下载安装包</span>
+      <div className="row gap-2" style={{ marginLeft: 'auto' }}>
+        <Button size="sm" variant="primary" onClick={() => navigate('settings', { tab: 'about' })}>
+          查看
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="mcal-btn--icon"
+          icon={<IconClose size={13} />}
+          title="关闭"
+          onClick={() => setDismissed(true)}
+        />
+      </div>
+    </div>
+  )
+}
+
 /* ------------------------------- 顶部状态条 ------------------------------- */
 
 export function StatusStrip(): React.JSX.Element | null {
@@ -274,49 +344,52 @@ export function StatusStrip(): React.JSX.Element | null {
 
   const active = tasks.filter((task) => task.state === 'running')
 
-  if (active.length === 0 && running.length === 0) return null
-
   return (
-    <div
-      className="row gap-4 anim-rise"
-      style={{
-        padding: '6px 20px',
-        borderBottom: '1px solid var(--c-hairline)',
-        background: 'rgba(10, 13, 20, 0.7)',
-        fontSize: 12,
-        flexShrink: 0
-      }}
-    >
-      {running.map((game) => (
-        <span key={game.instanceId} className="row gap-2">
-          <span
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              background: 'var(--c-verdant)',
-              boxShadow: '0 0 8px var(--c-verdant)'
-            }}
-          />
-          <span className="dim">游戏运行中</span>
-          <span className="mono">
-            {Math.floor((now - Date.parse(game.startedAt)) / 1000) > 0
-              ? `${Math.floor((now - Date.parse(game.startedAt)) / 1000)}s`
-              : '启动中'}
-          </span>
-        </span>
-      ))}
-      {active.map((task) => (
-        <span key={task.taskId} className="row gap-2 grow" style={{ minWidth: 0 }}>
-          <span className="mcal-spinner" style={{ width: 11, height: 11, borderWidth: 1.6 }} />
-          <span className="dim truncate">{task.label}</span>
-          {task.progress ? (
-            <span className="mono faint truncate">
-              {task.progress.completed}/{task.progress.total} · {(task.progress.speed / 1024 / 1024).toFixed(1)} MB/s
+    <>
+      <UpdateBanner />
+      {active.length === 0 && running.length === 0 ? null : (
+        <div
+          className="row gap-4 anim-rise"
+          style={{
+            padding: '6px 20px',
+            borderBottom: '1px solid var(--c-hairline)',
+            background: 'rgba(10, 13, 20, 0.7)',
+            fontSize: 12,
+            flexShrink: 0
+          }}
+        >
+          {running.map((game) => (
+            <span key={game.instanceId} className="row gap-2">
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: 'var(--c-verdant)',
+                  boxShadow: '0 0 8px var(--c-verdant)'
+                }}
+              />
+              <span className="dim">游戏运行中</span>
+              <span className="mono">
+                {Math.floor((now - Date.parse(game.startedAt)) / 1000) > 0
+                  ? `${Math.floor((now - Date.parse(game.startedAt)) / 1000)}s`
+                  : '启动中'}
+              </span>
             </span>
-          ) : null}
-        </span>
-      ))}
-    </div>
+          ))}
+          {active.map((task) => (
+            <span key={task.taskId} className="row gap-2 grow" style={{ minWidth: 0 }}>
+              <span className="mcal-spinner" style={{ width: 11, height: 11, borderWidth: 1.6 }} />
+              <span className="dim truncate">{task.label}</span>
+              {task.progress ? (
+                <span className="mono faint truncate">
+                  {task.progress.completed}/{task.progress.total} · {(task.progress.speed / 1024 / 1024).toFixed(1)} MB/s
+                </span>
+              ) : null}
+            </span>
+          ))}
+        </div>
+      )}
+    </>
   )
 }

@@ -3,7 +3,14 @@
 import { PROVIDER_PRESETS, presetToSettings } from '@agent/provider'
 import type { ImageProviderSettings, ProviderSettings } from '@shared/types'
 
-/** 首次运行时在设置里预置的 provider（不填 key，等用户补） */
+/**
+ * 首次运行时在设置里预置的 provider（不填 key，等用户补）。
+ *
+ * 这里只在「设置里还没有任何 provider」时做一次性播种：生成的条目是
+ * ProviderSettings 的普通字段副本（id/name/baseUrl/apiKey/model 全部自包含），
+ * 运行期不再依赖 PROVIDER_PRESETS。用户完全可以自由增删/修改 provider 条目，
+ * 也可以按同样的结构自行添加「自定义服务商」，不会与内置预设表产生耦合。
+ */
 export function defaultProviders(): ProviderSettings[] {
   return PROVIDER_PRESETS.filter((preset) => ['deepseek', 'moonshot', 'zhipu', 'ollama'].includes(preset.id)).map((preset) =>
     presetToSettings(preset)

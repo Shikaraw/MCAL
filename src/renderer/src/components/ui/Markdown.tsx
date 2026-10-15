@@ -219,10 +219,12 @@ function renderInline(text: string): ReactNode[] {
             key={key++}
             href={url}
             onClick={(event) => {
+              event.preventDefault()
               if (isExternal) {
-                event.preventDefault()
                 void window.mcal?.system.openExternal(url)
               }
+              // 非 http(s) 链接一律不跟随：Markdown 可能来自 Release notes 等外部内容，
+              // 放行会让整个窗口被导航到 file:// 之类的地址
             }}
             title={isExternal ? url : undefined}
           >

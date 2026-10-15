@@ -11,6 +11,7 @@ import type { Library, VersionDetail } from '@shared/types'
 import { createRuleContext, defaultFeatures, evaluateRules, type RuleContext } from '@core/mojang/rules'
 import { convertLegacyArguments, mergeVersionDetail, tokenizeLegacyArguments } from '@core/mojang/version'
 import {
+  classifierArch,
   dedupeLibraries,
   libraryDownloadItems,
   nativeLibraries,
@@ -523,5 +524,99 @@ describe('isVersionSupportedByLoader', () => {
     expect(isVersionSupportedByLoader('a1.2.6')).toBe(false)
     expect(isVersionSupportedByLoader('b1.7.3')).toBe(false)
     expect(isVersionSupportedByLoader('')).toBe(false)
+  })
+})
+
+/* ------------------------------------------------------------------ *
+ *  natives 架构过滤
+ *
+ *  1.21.9（LWJGL 3.4）起 Mojang 把 natives 改成「普通 artifact + natives-<os>[-<arch>]
+ *  命名」的独立条目，规则里只判断 os.name、不判断 os.arch（26.3 的 version json 就是
+ *  这样）。照规则照单全收会在 x64 上同时把 x64 与 arm64 的 natives jar 挂上 classpath，
+ *  而这两个 jar 里的 DLL 同名，由库自己在运行时解压，挑错就是一组加载不了的 DLL。
+ * ------------------------------------------------------------------ */
+
+describe('natives：按架构过滤变体', () => {
+  const librariesDir = join('C:', 'mc', 'libraries')
+
+  /** 26.3 的真实形态：downloads.artifact 指向 natives jar，没有 natives / classifiers 字段 */
+  const nativeVariant = (classifier: string, osName: string): Library => ({
+    name: `org.lwjgl:lwjgl-openal:3.4.3:${classifier}`,
+    downloads: {
+      artifact: {
+        path: `org/lwjgl/lwjgl-openal/3.4.3/lwjgl-openal-3.4.3-${classifier}.jar`,
+        url: `https://libraries.minecraft.net/lwjgl-openal-3.4.3-${classifier}.jar`
+      }
+    },
+    rules: [{ action: 'allow', os: { name: osName } }]
+  })
+
+  const lwjglVariants = (): Library[] => [
+    {
+      name: 'org.lwjgl:lwjgl-openal:3.4.3',
+      downloads: {
+        artifact: {
+          path: 'org/lwjgl/lwjgl-openal/3.4.3/lwjgl-openal-3.4.3.jar',
+          url: 'https://libraries.minecraft.net/lwjgl-openal-3.4.3.jar'
+        }
+      }
+    },
+    nativeVariant('natives-windows', 'windows'),
+    nativeVariant('natives-windows-arm64', 'windows'),
+    nativeVariant('natives-windows-x86', 'windows'),
+    nativeVariant('natives-macos-arm64', 'osx')
+  ]
+
+  const jars = (arch: RuleContext['arch']): string[] =>
+    resolveLibraries(lwjglVariants(), { librariesDir, rules: windowsX64({ arch }), mirror: OFFICIAL_MIRROR })
+      .map((entry) => entry.path)
+      .filter((path) => path.includes('natives'))
+
+  it('x64 只保留通用（x64 基线）natives，不碰 arm64 / x86', () => {
+    const names = jars('x64')
+    expect(names).toEqual(['org/lwjgl/lwjgl-openal/3.4.3/lwjgl-openal-3.4.3-natives-windows.jar'])
+  })
+
+  it('arm64 只保留 arm64 变体，通用变体被丢掉（同名 DLL 不能共存）', () => {
+    const names = jars('arm64')
+    expect(names).toEqual(['org/lwjgl/lwjgl-openal/3.4.3/lwjgl-openal-3.4.3-natives-windows-arm64.jar'])
+  })
+
+  it('x86 只保留 x86 变体', () => {
+    const names = jars('x86')
+    expect(names).toEqual(['org/lwjgl/lwjgl-openal/3.4.3/lwjgl-openal-3.4.3-natives-windows-x86.jar'])
+  })
+
+  it('其他平台的 natives 一律不进列表', () => {
+    expect(jars('x64').some((name) => name.includes('macos'))).toBe(false)
+  })
+
+  it('classifierArch 能认出常见写法', () => {
+    expect(classifierArch('natives-windows-arm64')).toBe('arm64')
+    expect(classifierArch('natives-linux-aarch64')).toBe('arm64')
+    expect(classifierArch('natives-windows-x86_64')).toBe('x64')
+    expect(classifierArch('natives-windows-x64')).toBe('x64')
+    expect(classifierArch('natives-windows-amd64')).toBe('x64')
+    expect(classifierArch('natives-windows-64')).toBe('x64')
+    expect(classifierArch('natives-windows-x86')).toBe('x86')
+    expect(classifierArch('natives-windows-32')).toBe('x86')
+    expect(classifierArch('natives-windows')).toBeNull()
+    expect(classifierArch('natives-osx')).toBeNull()
+  })
+
+  it('老版本（natives 模板 + classifiers）不受架构过滤影响', () => {
+    const lib: Library = {
+      name: 'org.lwjgl:lwjgl:3.3.1',
+      downloads: {
+        classifiers: {
+          'natives-windows-64': { url: 'https://libraries.minecraft.net/lwjgl-3.3.1-natives-windows-64.jar' }
+        }
+      },
+      natives: { windows: 'natives-windows-${arch}' }
+    }
+    const entries = resolveLibraries([lib], { librariesDir, rules: windowsX64(), mirror: OFFICIAL_MIRROR })
+    const natives = nativeLibraries(entries)
+    expect(natives).toHaveLength(1)
+    expect(natives[0].path).toContain('natives-windows-64.jar')
   })
 })

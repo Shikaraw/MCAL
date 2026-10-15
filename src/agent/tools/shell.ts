@@ -29,6 +29,8 @@ const HIGH_RISK_PATTERNS: { re: RegExp; note: string }[] = [
 function resolveCwd(ctx: ToolInvocationContext, cwd?: string): string {
   if (!cwd) return ctx.roots[0] ?? process.cwd()
   const absolute = isAbsolute(cwd) ? resolve(cwd) : resolve(ctx.roots[0] ?? process.cwd(), cwd)
+  // 完全访问：允许任意工作目录（该命令本身已逐次授权）
+  if (ctx.accessMode === 'full') return absolute
   const normalized = absolute.replace(/\\/g, '/').toLowerCase()
   for (const root of ctx.roots) {
     const rootNorm = resolve(root).replace(/\\/g, '/').toLowerCase().replace(/\/+$/, '')
@@ -153,6 +155,8 @@ export const runCommandTool: ToolDefinitionWithHandler = {
   },
   category: 'shell',
   dangerous: true,
+  // 命令可以 cd 到任意目录再写文件，路径沙箱对它无效，因此「仅工作区」级别下直接不放行
+  escapesWorkspace: true,
   permissionFor: (args) => {
     const command = String(args.command ?? '')
     const high = HIGH_RISK_PATTERNS.find((pattern) => pattern.re.test(command))

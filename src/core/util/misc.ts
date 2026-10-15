@@ -198,12 +198,16 @@ export class KeyedLock {
   run<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const prev = this.queues.get(key) ?? Promise.resolve()
     const next = prev.then(fn, fn)
-    this.queues.set(
-      key,
-      next.catch(() => undefined)
+    // 排队用的那个 promise 必须永不 reject：否则一旦任务失败，
+    // 它就会变成一个没人处理的 rejection（调用方拿的是 next，不是它）。
+    const settled = next.then(
+      () => undefined,
+      () => undefined
     )
-    void next.finally(() => {
-      if (this.queues.get(key) === next) this.queues.delete(key)
+    this.queues.set(key, settled)
+    void settled.then(() => {
+      // 比对的必须是存进去的那个对象，否则队列表永远不会清理
+      if (this.queues.get(key) === settled) this.queues.delete(key)
     })
     return next
   }

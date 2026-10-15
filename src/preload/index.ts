@@ -17,6 +17,8 @@ import type {
   JavaInstallCandidate,
   LaunchRequest,
   LoaderInstallRequest,
+  VersionInstallPlan,
+  VersionInstallResult,
   McalApi,
   McalSettings,
   PermissionResponse,
@@ -37,6 +39,22 @@ const api: McalApi = {
     pickDir: (opts) => invoke(IPC.settingsPickDir, opts),
     pickFile: (opts) => invoke(IPC.settingsPickFile, opts)
   },
+  gameDir: {
+    detect: () => invoke(IPC.gameDirDetect),
+    probe: (path: string) => invoke(IPC.gameDirProbe, path),
+    add: (path: string, label?: string) => invoke(IPC.gameDirAdd, path, label),
+    remove: (path: string) => invoke(IPC.gameDirRemove, path)
+  },
+  update: {
+    check: (opts) => invoke(IPC.updateCheck, opts),
+    download: (asset) => invoke(IPC.updateDownload, asset),
+    openRelease: (url: string) => invoke<void>(IPC.updateOpenRelease, url),
+    onEvent: (cb) => {
+      const listener = (_event: unknown, payload: unknown): void => cb(payload as never)
+      ipcRenderer.on(IPC.updateEvent, listener)
+      return () => ipcRenderer.removeListener(IPC.updateEvent, listener)
+    }
+  },
   instance: {
     list: () => invoke<Instance[]>(IPC.instanceList),
     create: (patch) => invoke<Instance>(IPC.instanceCreate, patch),
@@ -48,6 +66,7 @@ const api: McalApi = {
     list: () => invoke(IPC.versionList),
     manifest: (refresh) => invoke(IPC.versionManifest, refresh),
     install: (gameVersion) => invoke(IPC.versionInstall, gameVersion),
+    installPlan: (plan: VersionInstallPlan) => invoke<VersionInstallResult>(IPC.versionInstallPlan, plan),
     remove: (versionId) => invoke<void>(IPC.versionDelete, versionId),
     loaderVersions: (opts) => invoke(IPC.loaderVersions, opts),
     installLoader: (req: LoaderInstallRequest) => invoke(IPC.loaderInstall, req)

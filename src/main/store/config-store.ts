@@ -36,7 +36,11 @@ export function defaultSettings(rootDir: string): McalSettings {
       motion: 'full'
     },
     agent: {
-      permissionMode: 'ask',
+      accessMode: 'workspace',
+      permissionMode: 'auto-safe',
+      confirmSensitive: true,
+      // 记住 10 分钟的授权，避免同一个操作反复弹窗
+      grantRememberMs: 10 * 60 * 1000,
       compactionThreshold: 120_000,
       memoryEnabled: true,
       knowledgeEnabled: true,
@@ -46,6 +50,14 @@ export function defaultSettings(rootDir: string): McalSettings {
       skillDirs: [],
       maxTurnsPerRequest: 25,
       stream: true
+    },
+    gameDirs: [],
+    update: {
+      autoCheck: true,
+      source: 'mirror',
+      mirrorId: 'ghproxy',
+      useSystemProxy: false,
+      repo: 'Shikaraw/MinecraftAgentLauncher'
     },
     media: {
       providers: []
@@ -65,10 +77,12 @@ export function mergeSettings(base: McalSettings, patch: DeepPartial<McalSetting
   const out = { ...base } as Record<string, unknown>
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue
+    // 手改坏的文件里可能出现 `"agent": null`，这种一律当没写，避免整个启动器读配置就崩
+    if (value === null) continue
     const current = out[key]
     if (Array.isArray(value)) {
       out[key] = value
-    } else if (value !== null && typeof value === 'object' && current !== null && typeof current === 'object' && !Array.isArray(current)) {
+    } else if (typeof value === 'object' && current !== null && typeof current === 'object' && !Array.isArray(current)) {
       out[key] = mergeSettings(current as McalSettings, value as DeepPartial<McalSettings>)
     } else {
       out[key] = value

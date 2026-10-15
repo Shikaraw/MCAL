@@ -3,9 +3,9 @@
  * 这是所有安装流程（版本 / 库 / 资源 / 加载器 / 整合包）的统一入口。
  */
 
-import { stat } from 'node:fs/promises'
+import { rm, stat } from 'node:fs/promises'
 import type { DownloadItem, DownloadProgress } from '@shared/types'
-import { HttpClient, downloadWithFallback } from '@core/net/http'
+import { HttpClient, VerifyError, downloadWithFallback } from '@core/net/http'
 import { MirrorResolver } from '@core/net/mirror'
 import { formatBytes, formatSpeed, sha1OfFile, sha256OfFile, sleep } from '@core/util/misc'
 import { KeyedLock, mapConcurrent } from '@core/util/misc'
@@ -113,7 +113,7 @@ export class DownloadManager {
     return false
   }
 
-  /** 单文件下载（带镜像回退与所需目录创建） */
+  /** 单文件下载（带镜像回退、校验换源与所需目录创建） */
   async downloadOne(item: DownloadItem, signal?: AbortSignal): Promise<{ bytes: number; skipped: boolean }> {
     return this.locks.run(item.dest, async () => {
       if (await pathExists(item.dest)) {
@@ -124,18 +124,62 @@ export class DownloadManager {
       }
       await ensureDir(dirname(item.dest))
       const urls = [item.url, ...(item.fallbackUrls ?? [])]
-      const result = await downloadWithFallback(this.client, urls, item.dest, { signal, resume: true })
+      const needsVerify = this.verifyHash && !!(item.sha1 || item.sha256)
 
-      if (this.verifyHash && (item.sha1 || item.sha256)) {
-        const ok = await this.verifyFile(item)
-        if (!ok) {
-          const actualSize = await fileSize(item.dest)
-          throw new Error(
-            `文件校验失败：${item.dest}（大小 ${formatBytes(actualSize)}，期望 sha1=${item.sha1 ?? '-'}）`
-          )
-        }
+      const cleanup = async (): Promise<void> => {
+        await rm(item.dest, { force: true }).catch(() => undefined)
+        await rm(`${item.dest}.part`, { force: true }).catch(() => undefined)
       }
-      return { bytes: result.bytes, skipped: false }
+
+      /** 校验失败要带上期望哈希与文件名，用户才知道是哪个文件坏了 */
+      const verifyFailure = async (): Promise<Error> => {
+        const actualSize = await fileSize(item.dest).catch(() => 0)
+        await cleanup()
+        return new Error(
+          `文件校验失败：${item.dest}（大小 ${formatBytes(actualSize)}，期望 sha1=${item.sha1 ?? item.sha256 ?? '-'}）\n` +
+            `已尝试的地址：${urls.join('、')}`
+        )
+      }
+
+      // 校验回调交给下载层：某个镜像给出坏文件时会自动换下一个地址，
+      // 而不是先把坏文件落盘再让调用方失败重试。
+      const attempt = (resume: boolean): Promise<{ bytes: number; url: string }> =>
+        downloadWithFallback(this.client, urls, item.dest, {
+          signal,
+          resume,
+          expectedSize: item.size,
+          verify: needsVerify ? () => this.verifyFile(item) : undefined
+        })
+
+      let firstError: Error | null = null
+      let bytes = 0
+      try {
+        const result = await attempt(true)
+        bytes = result.bytes
+      } catch (err) {
+        firstError = err instanceof Error ? err : new Error(String(err))
+      }
+
+      if (needsVerify && !(await this.verifyFile(item))) {
+        // 坏文件的来源可能是上一次写入被打断、或镜像本身串了文件：
+        // 连同 .part 一起清掉重下一次，别在坏数据上续传（那样永远校验不过）。
+        await cleanup()
+        log.warn(`校验未通过，清空后重下一次：${item.dest}（${firstError?.message ?? '内容不符'}）`)
+        try {
+          const result = await attempt(false)
+          bytes = result.bytes
+        } catch (err) {
+          if (err instanceof VerifyError) throw await verifyFailure()
+          await cleanup()
+          throw err instanceof Error ? err : new Error(String(err))
+        }
+        if (!(await this.verifyFile(item))) throw await verifyFailure()
+      } else if (firstError && !(await pathExists(item.dest))) {
+        // 没要求校验，且确实什么都没下下来
+        throw firstError
+      }
+
+      return { bytes, skipped: false }
     })
   }
 

@@ -321,12 +321,14 @@ export class ServiceContainer {
     ])
   }
 
-  /** Agent 可写目录：数据目录 + 用户资源目录 + 所有实例目录（含服务端） */
+  /** Agent 可写目录：数据目录 + 用户资源目录 + 所有实例/服务端目录 + 用户登记的游戏目录 */
   agentRoots(): string[] {
     const roots = [this.rootDir, this.userResourcesRoot]
     for (const instance of this.instancesMemo) roots.push(instance.gameDir)
     for (const server of this.serversMemo) roots.push(server.dir)
-    return roots
+    // 用户手动添加或自动检测到的游戏目录，同样是「工作区」的一部分
+    for (const dir of this.settings.get().gameDirs) roots.push(dir.path)
+    return [...new Set(roots)]
   }
 
   /** 实例与服务端列表的内存缓存（由 launcher-api 在变更时刷新） */
@@ -369,7 +371,8 @@ export class ServiceContainer {
       arch: arch(),
       totalMemoryMB: Math.round(totalmem() / 1024 / 1024),
       appVersion: this.appVersion,
-      settingsExtra: settings.launcher.locale
+      settingsExtra: settings.launcher.locale,
+      roots: this.agentRoots()
     }
   }
 

@@ -14,7 +14,7 @@
  */
 
 import { join } from 'node:path'
-import type { DownloadItem, Library } from '@shared/types'
+import type { ArchName, DownloadItem, Library } from '@shared/types'
 import { OFFICIAL_ENDPOINTS, fallbackMirrors, type MirrorResolver } from '@core/net/mirror'
 import { logger } from '@core/util/logger'
 import { mavenToPath, parseMavenName, type MavenCoordinate } from '@core/util/misc'
@@ -190,6 +190,50 @@ function buildClasspathEntry(lib: Library, coord: MavenCoordinate | null, opts: 
   return makeEntry(lib, path, joinUrl(lib.url ?? DEFAULT_LIBRARY_BASE, path), false, undefined, undefined, undefined, undefined, opts)
 }
 
+/**
+ * native classifier 里显式写出的目标架构。
+ *
+ * 为什么需要它：Mojang 从 1.21.9（LWJGL 3.4）起把 natives 拆成独立库条目
+ * （`natives-windows` / `natives-windows-arm64` / `natives-windows-x86`），
+ * 但规则里只判断了 `os.name`，**没有判断 os.arch**。照规则求值会把这些变体
+ * 全部收下，在 x64 机器上同时下载并解压 x64 与 arm64 的 DLL —— 同名文件互相
+ * 覆盖，最终解压出来的可能正好是加载不了的那一套。
+ */
+const ARCH_TOKEN_PATTERNS: { pattern: RegExp; arch: ArchName }[] = [
+  { pattern: /(?:^|[-_.])(?:x86_64|x64|amd64)(?:$|[-_.])/, arch: 'x64' },
+  { pattern: /(?:^|[-_.])(?:aarch64|arm64)(?:$|[-_.])/, arch: 'arm64' },
+  { pattern: /(?:^|[-_.])(?:x86|i386|i686|ia32)(?:$|[-_.])/, arch: 'x86' },
+  // 老约定：natives 模板 `${arch}` 展开成 32/64，如 natives-windows-64
+  { pattern: /(?:^|[-_.])64(?:$|[-_.])/, arch: 'x64' },
+  { pattern: /(?:^|[-_.])32(?:$|[-_.])/, arch: 'x86' }
+]
+
+/** 从 classifier 推出它面向的架构；推不出（如 `natives-windows`）返回 null */
+export function classifierArch(classifier: string | null | undefined): ArchName | null {
+  if (!classifier) return null
+  const value = classifier.toLowerCase()
+  for (const { pattern, arch } of ARCH_TOKEN_PATTERNS) {
+    if (pattern.test(value)) return arch
+  }
+  return null
+}
+
+/** 该 classifier 是否适用于当前架构；没有架构信息时视为通用 */
+function classifierArchUsable(classifier: string | null, ctx: RuleContext): boolean {
+  const arch = classifierArch(classifier)
+  if (!arch) return true
+  // x64 的 native 在 arm64 上靠兼容层也能跑，其余必须精确匹配
+  if (arch === 'x64') return ctx.arch === 'x64' || ctx.arch === 'arm64'
+  return arch === ctx.arch
+}
+
+/** group:artifact（去掉版本与 classifier），用于把同一库的多个 natives 变体归组 */
+function baseCoordOf(name: string): string {
+  const coord = parseMavenName(name)
+  if (!coord) return name
+  return `${coord.group}:${coord.artifact}`
+}
+
 /** 内部：一个库可能产出 native + classpath 两个条目 */
 function resolveLibraryEntries(lib: Library, opts: ResolveLibraryOptions): ResolvedLibrary[] {
   if (!lib?.name) return []
@@ -197,6 +241,8 @@ function resolveLibraryEntries(lib: Library, opts: ResolveLibraryOptions): Resol
   if (!evaluateRules(lib.rules, opts.rules)) return []
 
   const coord = parseMavenName(lib.name)
+  // 条目名里点名了别的架构（natives-windows-arm64 之流）→ 跳过
+  if (!classifierArchUsable(coord?.classifier ?? null, opts.rules)) return []
   const entries: ResolvedLibrary[] = []
   const nativeEntry = buildNativeEntry(lib, coord, opts)
   if (nativeEntry) entries.push(nativeEntry)
@@ -218,6 +264,27 @@ export function resolveLibrary(lib: Library, opts: ResolveLibraryOptions): Resol
 export function resolveLibraries(libs: Library[] | undefined, opts: ResolveLibraryOptions): ResolvedLibrary[] {
   const out: ResolvedLibrary[] = []
   for (const lib of libs ?? []) out.push(...resolveLibraryEntries(lib, opts))
+
+  // 收尾：同一坐标若同时存在「显式架构」与「无架构标注」（按惯例是 x64 基线）
+  // 两种 natives，丢掉后者 —— 两个 jar 里的 DLL 同名，同时挂着必然有一个被挑错。
+  // 例：x86 主机上 `natives-windows`(x64) 与 `natives-windows-x86` 只能留后者。
+  const host = opts.rules.arch
+  if (host === 'x64' || host === 'x86' || host === 'arm64') {
+    const explicitBases = new Set<string>()
+    for (const entry of out) {
+      const classifier = parseMavenName(entry.name)?.classifier
+      if (!classifier || !classifier.includes('natives')) continue
+      if (classifierArch(classifier) === host) explicitBases.add(baseCoordOf(entry.name))
+    }
+    if (explicitBases.size > 0) {
+      return out.filter((entry) => {
+        const classifier = parseMavenName(entry.name)?.classifier
+        const isGenericNative =
+          !!classifier && classifier.includes('natives') && classifierArch(classifier) === null
+        return !(isGenericNative && explicitBases.has(baseCoordOf(entry.name)))
+      })
+    }
+  }
   return out
 }
 

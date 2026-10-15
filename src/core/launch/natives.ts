@@ -89,9 +89,22 @@ export async function extractNatives(opts: {
  * legacy=false（1.19+）时只保证目录存在；legacy=true 时同样只保证目录存在 ——
  * 解压由 extractNatives 负责，这里刻意不做「清空目录」：目录里可能同时有 32/64 位文件，
  * 清空后如果 extraction 中途失败会让游戏直接缺 dll。陈旧文件由增量覆盖处理。
+ *
+ * 另外还要建好几个子目录：1.21.9（LWJGL 3.4）起 natives 不再由启动器解压，
+ * 而是把 natives jar 放上 classpath，由库自己在运行时解压，落点由 JVM 参数指定：
+ *   -Dorg.lwjgl.system.SharedLibraryExtractPath=${natives_directory}/lwjgl
+ *   -Dio.netty.native.workdir=${natives_directory}/netty
+ *   -Djna.tmpdir=${natives_directory}/jna
+ *   -Djava.library.path=${natives_directory}/java
+ * 这几条参数在 26.3 的 version json 里是默认存在的，目录不存在时相关库的自解压会失败。
  */
 export async function prepareNativeDir(dir: string, legacy: boolean): Promise<void> {
   await ensureDir(dir)
+  if (!legacy) {
+    for (const sub of ['java', 'jna', 'lwjgl', 'netty']) {
+      await ensureDir(join(dir, sub))
+    }
+  }
   log.debug(`native 目录${legacy ? '（老版本，需解压）' : '（1.19+，无需解压）'}：${dir}`)
 }
 

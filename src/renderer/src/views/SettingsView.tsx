@@ -1,7 +1,7 @@
 /**
  * 设置页。
  *
- * 分组：AI 模型 / 生图模型 / 下载 / Java / 账号 / 外观 / 关于
+ * 分组：AI 模型 / 生图模型 / 下载 / 游戏目录 / Java / 账号 / 外观 / 关于（含软件更新）
  *
  * 约定：所有「开关类」改动即时保存（乐观更新由 store 负责），
  * 文本框类改动走「保存」按钮，避免用户每敲一个字就写一次磁盘。
@@ -9,7 +9,7 @@
  * 保证乐观状态不丢字段。
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   Account,
   ImageProviderSettings,
@@ -35,13 +35,16 @@ import {
   IconSparkles,
   IconTrash
 } from '../components/ui/icons'
+import { GameDirPanel } from './GameDirPanel'
+import { UpdatePanel } from './UpdatePanel'
 
-type SettingsTab = 'ai' | 'image' | 'download' | 'java' | 'account' | 'appearance' | 'about'
+type SettingsTab = 'ai' | 'image' | 'download' | 'game' | 'java' | 'account' | 'appearance' | 'about'
 
 const TABS: { value: SettingsTab; label: string }[] = [
   { value: 'ai', label: 'AI 模型' },
   { value: 'image', label: '生图模型' },
   { value: 'download', label: '下载' },
+  { value: 'game', label: '游戏目录' },
   { value: 'java', label: 'Java' },
   { value: 'account', label: '账号' },
   { value: 'appearance', label: '外观' },
@@ -58,6 +61,11 @@ export function SettingsView(): React.JSX.Element {
   const loading = useSettings((state) => state.loading)
   const load = useSettings((state) => state.load)
   const [tab, setTab] = useState<SettingsTab>(() => normalizeTab(params.tab))
+
+  // 从顶部更新提示条等入口跳进来时带 params.tab，切到对应标签页
+  useEffect(() => {
+    if (typeof params.tab === 'string') setTab(normalizeTab(params.tab))
+  }, [params.tab])
 
   return (
     <div className="page">
@@ -84,6 +92,7 @@ export function SettingsView(): React.JSX.Element {
               {tab === 'ai' ? <AgentTab settings={settings} /> : null}
               {tab === 'image' ? <ImageTab settings={settings} /> : null}
               {tab === 'download' ? <DownloadTab settings={settings} /> : null}
+              {tab === 'game' ? <GameDirPanel /> : null}
               {tab === 'java' ? <JavaTab settings={settings} /> : null}
               {tab === 'account' ? <AccountTab settings={settings} /> : null}
               {tab === 'appearance' ? <AppearanceTab settings={settings} /> : null}
@@ -206,6 +215,27 @@ function NumberSlider({
 /* ================================================================== *
  *  AI 模型
  * ================================================================== */
+
+const ACCESS_MODES: { value: McalSettings['agent']['accessMode']; label: string; risk: string }[] = [
+  {
+    value: 'workspace',
+    label: '仅工作区',
+    risk: '默认。只能读写游戏目录、实例目录、服务端目录和启动器数据目录；工作区之外的路径直接被拒绝，命令执行也一并禁用（命令可以绕过路径限制）。'
+  },
+  {
+    value: 'full',
+    label: '完全访问',
+    risk: '可以读写任意路径。工作区之外的写入、删除、执行命令都会单独弹窗让你确认；适合让它帮忙整理磁盘上的项目、跑构建脚本。'
+  }
+]
+
+const GRANT_DURATIONS: { value: number; label: string }[] = [
+  { value: 0, label: '不记住' },
+  { value: 5 * 60 * 1000, label: '5 分钟' },
+  { value: 10 * 60 * 1000, label: '10 分钟' },
+  { value: 30 * 60 * 1000, label: '30 分钟' },
+  { value: 60 * 60 * 1000, label: '1 小时' }
+]
 
 const PERMISSION_MODES: { value: McalSettings['agent']['permissionMode']; label: string; risk: string }[] = [
   { value: 'ask', label: '每次询问', risk: '最安全：每个工具调用都弹窗确认。刚开始用 AI 助手时建议保持这个。' },
@@ -344,6 +374,36 @@ function AgentTab({ settings }: { settings: McalSettings }): React.JSX.Element {
       </Section>
 
       <Section title="Agent 行为" description="这些设置决定 AI 助手能动你电脑上的哪些东西，以及上下文与记忆的使用方式。">
+        <Row title="访问权限" hint={(ACCESS_MODES.find((mode) => mode.value === agent.accessMode) ?? ACCESS_MODES[0]).risk}>
+          <Segmented
+            value={agent.accessMode}
+            onChange={(value) => patchAgent({ accessMode: value })}
+            options={ACCESS_MODES.map((mode) => ({ value: mode.value, label: mode.label }))}
+          />
+        </Row>
+
+        <Row
+          title="敏感操作必须授权"
+          hint="开启后，删除文件、执行命令、工作区之外的写入即使选了「全部自动」也一定会弹窗确认。关掉它等于把决定权完全交给权限模式。"
+        >
+          <div className="row gap-2">
+            <Switch
+              checked={agent.confirmSensitive}
+              onChange={(value) => patchAgent({ confirmSensitive: value })}
+              label="敏感操作必须授权"
+            />
+            <span className="fs-sm muted">{agent.confirmSensitive ? '已开启（推荐）' : '已关闭：敏感操作也会自动执行'}</span>
+          </div>
+        </Row>
+
+        <Row title="授权记忆时长" hint="你在弹窗里选择「本会话内允许」后，该工具在这个时长内不再重复询问。选「不记住」则只对当次调用有效。">
+          <Segmented
+            value={String(agent.grantRememberMs)}
+            onChange={(value) => patchAgent({ grantRememberMs: Number(value) })}
+            options={GRANT_DURATIONS.map((item) => ({ value: String(item.value), label: item.label }))}
+          />
+        </Row>
+
         <Row title="权限模式" hint={current.risk}>
           <Segmented
             value={agent.permissionMode}
@@ -535,12 +595,18 @@ function ProviderCard({
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string; latencyMs?: number } | null>(null)
 
+  const dirty = JSON.stringify(draft) !== JSON.stringify(provider)
+  // 任何一次设置写入成功后，主进程都会把整份配置回传，providers 数组因此是全新对象。
+  // 这时如果无脑用 provider 覆盖 draft，用户刚粘进去、还没点保存的 API Key 会被静默清空。
+  const dirtyRef = useRef(false)
+  dirtyRef.current = dirty
+
   useEffect(() => {
+    if (dirtyRef.current) return
     setDraft(provider)
     setCustomModel(false)
   }, [provider])
 
-  const dirty = JSON.stringify(draft) !== JSON.stringify(provider)
   const modelOptions = preset?.models ?? []
   const isKnownModel = modelOptions.length === 0 || modelOptions.includes(draft.model)
 
@@ -1454,6 +1520,10 @@ function AboutTab({ settings }: { settings: McalSettings }): React.JSX.Element {
 
   const logDir = `${settings.rootDir.replace(/[\\/]+$/, '')}/logs`
 
+  const scrollToUpdatePanel = useCallback(() => {
+    document.getElementById('mcal-update-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
+
   const exportDiagnostics = useCallback(async () => {
     setExporting(true)
     try {
@@ -1498,7 +1568,14 @@ function AboutTab({ settings }: { settings: McalSettings }): React.JSX.Element {
           <div className="col gap-2">
             <div className="fs-xl bold">MCAL · Minecraft Agent Launcher</div>
             <div className="row gap-2 wrap">
-              <Badge tone="ok">版本 {version?.app ?? '—'}</Badge>
+              <button
+                type="button"
+                className="mcal-badge mcal-badge--ok"
+                title="查看软件更新（检查新版本 / 下载安装包）"
+                onClick={scrollToUpdatePanel}
+              >
+                版本 {version?.app ?? '—'}
+              </button>
               <Badge>Electron {version?.electron ?? '—'}</Badge>
               <Badge>Node {version?.node ?? '—'}</Badge>
               <Badge>Chrome {version?.chrome ?? '—'}</Badge>
@@ -1577,8 +1654,17 @@ function AboutTab({ settings }: { settings: McalSettings }): React.JSX.Element {
         </div>
       </Section>
 
+      {/* 软件更新：放在「关于」里靠后的位置，顶部提示条与本页版本号都指向这里 */}
+      <div style={{ marginBottom: 16 }}>
+        <UpdatePanel />
+      </div>
+
       <Section title="开源与致谢" description="MCAL 站在这些开源项目的肩膀上。">
         <div className="col gap-2 fs-sm dim" style={{ paddingTop: 8, lineHeight: 'var(--lh-relaxed)' }}>
+          <span>
+            · <span className="bold">智能体运行时参照 DeepSeek 开源的 agent harness</span>
+            实现：主循环（压缩上下文 → 流式请求 → 只读工具并行 / 写工具串行 → 回填结果）、工具注册、权限门控与会话级授权记忆都沿用了它的设计；工具集换成了启动器的真实能力，全部实现在本仓库内；
+          </span>
           <span>· 参考了 HMCL 与 PCL2（Plain Craft Launcher）在实例管理、版本隔离与崩溃诊断上的设计思路；</span>
           <span>· 下载与镜像方案参考 BMCLAPI（bangbang93）的公益服务；</span>
           <span>· 模组元数据与检索来自 Modrinth 开放 API；</span>
